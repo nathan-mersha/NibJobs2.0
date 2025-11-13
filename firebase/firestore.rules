@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Jobs collection - readable by everyone, writable for setup
+    match /jobs/{jobId} {
+      allow read: if true;
+      allow write: if true; // Temporary - for initial setup
+    }
+    
+    // Users collection - users can only read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow create: if request.auth != null; // Allow user creation
+    }
+    
+    // Telegram sources - read-only for authenticated users, write-only for admins
+    match /telegram_sources/{sourceId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Only cloud functions/admin can write
+    }
+    
+    // Failed extractions - admin only
+    match /failed_extractions/{failId} {
+      allow read, write: if false; // Only cloud functions can access
+    }
+    
+    // Categories collection - read-only for everyone
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if false; // Only admin can modify categories
+    }
+    
+    // Job Categories collection - read by everyone, temporary write access for setup
+    match /jobCategories/{categoryId} {
+      allow read: if true;
+      allow write: if true; // Temporary - will be restricted after initial setup
+    }
+    
+    // App metadata - read-only for everyone
+    match /metadata/{docId} {
+      allow read: if true;
+      allow write: if true; // Temporary - for initial setup
+    }
+    
+    // Telegram channels - admin panel access (temporary open access for development)
+    match /telegramChannels/{channelId} {
+      allow read: if true; // Allow read access for admin panel
+      allow write: if true; // Allow write access for admin panel (temporary)
+    }
+  }
+}

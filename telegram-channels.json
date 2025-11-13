@@ -1,0 +1,66 @@
+{
+  "botInfo": {
+    "id": 8570126291,
+    "username": "NibJobs2_bot",
+    "name": "NibJobs2_bot",
+    "token": "8570126291:AAHEh3G8UAqTWU_KNKaWougObJqjZKWnp6U"
+  },
+  "channels": [
+    {
+      "username": "jobsindubai",
+      "name": "Jobs in Dubai",
+      "category": "general",
+      "country": "UAE",
+      "description": "Official jobs channel for Dubai positions"
+    },
+    {
+      "username": "uaejobs",
+      "name": "UAE Jobs Official",
+      "category": "general", 
+      "country": "UAE",
+      "description": "General UAE job opportunities"
+    },
+    {
+      "username": "techjobsme",
+      "name": "Tech Jobs Middle East",
+      "category": "technology",
+      "country": "global",
+      "description": "Technology and IT jobs in Middle East"
+    },
+    {
+      "username": "remoteworkjobs",
+      "name": "Remote Work Jobs",
+      "category": "remote",
+      "country": "global", 
+      "description": "Remote work opportunities worldwide"
+    },
+    {
+      "username": "marketingjobs",
+      "name": "Marketing & Sales Jobs",
+      "category": "marketing",
+      "country": "global",
+      "description": "Marketing and sales positions globally"
+    },
+    {
+      "username": "freelancejobs",
+      "name": "Freelance Jobs",
+      "category": "freelance",
+      "country": "global",
+      "description": "Freelance and project-based work"
+    },
+    {
+      "username": "dubaijobsofficial",
+      "name": "Dubai Jobs Official",
+      "category": "general",
+      "country": "UAE",
+      "description": "Official Dubai government job postings"
+    },
+    {
+      "username": "saudijobsofficial",
+      "name": "Saudi Jobs Official", 
+      "category": "general",
+      "country": "Saudi Arabia",
+      "description": "Official Saudi Arabia job opportunities"
+    }
+  ]
+}

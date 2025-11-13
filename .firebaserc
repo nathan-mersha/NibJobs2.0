@@ -1,0 +1,9 @@
+{
+  "projects": {
+    "default": "nibjobs-dev",
+    "development": "nibjobs-dev"
+  },
+  "targets": {},
+  "etags": {},
+  "dataconnectEmulatorConfig": {}
+}

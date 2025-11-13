@@ -1,0 +1,51 @@
+{
+  "name": "nibjobs",
+  "version": "1.0.0",
+  "description": "Automated job aggregation platform with AI-powered extraction",
+  "main": "index.js",
+  "scripts": {
+    "dev": "firebase emulators:start",
+    "deploy": "firebase deploy",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules": "firebase deploy --only firestore:rules",
+    "build": "cd functions && npm run build && cd ../mobile && npm run build",
+    "test": "cd functions && npm test && cd ../mobile && npm test",
+    "setup": "npm run setup:functions && npm run setup:mobile",
+    "setup:functions": "cd functions && npm install",
+    "setup:mobile": "cd mobile && npm install && cd ios && pod install && cd ..",
+    "clean": "cd functions && npm run clean && cd ../mobile && npm run clean",
+    "lint": "cd functions && npm run lint && cd ../mobile && npm run lint"
+  },
+  "keywords": [
+    "job-aggregation",
+    "telegram-scraping",
+    "react-native",
+    "firebase",
+    "ai-extraction"
+  ],
+  "author": "NibJobs Team",
+  "license": "PROPRIETARY",
+  "private": true,
+  "workspaces": [
+    "functions",
+    "mobile",
+    "shared"
+  ],
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "firebase-tools": "^14.24.2",
+    "prettier": "^3.0.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.13.2",
+    "input": "^1.0.1",
+    "telegram": "^2.26.22"
+  }
+}

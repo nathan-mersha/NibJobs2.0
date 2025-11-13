@@ -1,0 +1,26 @@
+{
+  "name": "NibJobs - Job Aggregation Platform",
+  "short_name": "NibJobs",
+  "description": "Automated job aggregation platform with AI-powered extraction",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FFF9E6",
+  "theme_color": "#F4C430",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "./icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en-US"
+}
