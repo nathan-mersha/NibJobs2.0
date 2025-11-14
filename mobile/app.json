@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "NibJobs",
-    "slug": "nibjobs-mobile", 
+    "slug": "nibjobs-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -26,6 +26,9 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      "expo-font"
+    ]
   }
 }

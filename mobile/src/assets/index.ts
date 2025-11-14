@@ -1,11 +1,11 @@
 // Asset exports for easy importing throughout the app
 // Usage: import { BeeIcon, NibJobsIcon } from '../assets';
 
-// App Icons & Logos - Use the actual nibjobs-icon.png
-export const AppIcon = require('../../assets/nibjobs-icon.png');     // Use actual NibJobs icon
-export const NibJobsIcon = require('../../assets/nibjobs-icon.png'); // Main brand icon
-export const BeeIcon = require('../../assets/nibjobs-icon.png');     // Bee icon reference
-export const Favicon = require('../../assets/favicon.png');          // Web favicon
+// App Icons & Logos - Use the favicon.png for all brand elements
+export const AppIcon = require('../../assets/favicon.png');     // Use favicon as app icon
+export const NibJobsIcon = require('../../assets/favicon.png'); // Main brand icon
+export const BeeIcon = require('../../assets/favicon.png');     // Bee icon reference
+export const Favicon = require('../../assets/favicon.png');     // Web favicon
 export const SplashImage = require('../../assets/splash.png');       // Splash screen
 
 // Legacy references (fallbacks)
