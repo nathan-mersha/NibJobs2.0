@@ -2,15 +2,23 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+    // Helper function to check if user is admin or superadmin
+    function isAdmin() {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'superadmin'];
+    }
+    
     // Jobs collection - readable by everyone, writable for setup
     match /jobs/{jobId} {
       allow read: if true;
       allow write: if true; // Temporary - for initial setup
     }
     
-    // Users collection - users can only read/write their own data
+    // Users collection - authenticated users can read all, users can write their own data, admins can update any user
     match /users/{userId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null; // Allow all authenticated users to read
+      allow write: if request.auth != null && request.auth.uid == userId; // Users can write their own data
+      allow update: if isAdmin(); // Admins can update any user
       allow create: if request.auth != null; // Allow user creation
     }
     
@@ -47,6 +55,18 @@ service cloud.firestore {
     match /telegramChannels/{channelId} {
       allow read: if true; // Allow read access for admin panel
       allow write: if true; // Allow write access for admin panel (temporary)
+    }
+    
+    // Scraping progress - readable by authenticated users for real-time updates
+    match /scrapingProgress/{sessionId} {
+      allow read: if request.auth != null; // Authenticated users can read progress
+      allow write: if false; // Only cloud functions can write progress
+    }
+    
+    // Subscription plans - read by everyone, write by authenticated users (admin panel)
+    match /subscriptionPlans/{planId} {
+      allow read: if true; // Everyone can read subscription plans
+      allow write: if request.auth != null; // Authenticated users can update plans (admin access)
     }
   }
 }

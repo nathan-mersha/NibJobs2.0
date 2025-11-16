@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Alert, ScrollView, FlatList, Image, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Alert, ScrollView, FlatList, Image, Animated, Dimensions, Linking, ActivityIndicator, Modal } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query as dbQuery, orderBy, limit, where, startAfter } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import TelegramChannelsScreen from './src/screens/TelegramChannelsScreen';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppFonts, fonts } from './src/utils/fonts';
@@ -23,6 +25,7 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
+const functions = getFunctions(app);
 
 // Brand colors - Updated with modern palette
 const lightColors = {
@@ -72,6 +75,65 @@ const darkColors = {
   sidebarHover: '#374151',
 };
 
+// Subscription Plans Configuration
+const SUBSCRIPTION_PLANS = [
+  {
+    id: 'free',
+    name: 'Free',
+    priceMonthly: 0,
+    priceYearly: 0,
+    icon: 'star-outline',
+    color: '#808080',
+    popular: false,
+    buttonText: 'Get Started',
+    features: [
+      { text: '3 custom job notifications per day on mobile app', enabled: true },
+      { text: 'Basic job search and browsing', enabled: true },
+      { text: 'Cannot post job ads', enabled: false },
+      { text: 'Limited to 3 notifications daily', enabled: false }
+    ],
+    adsEnabled: true
+  },
+  {
+    id: 'standard',
+    name: 'Standard',
+    priceMonthly: 299,
+    priceYearly: 2990,
+    icon: 'star',
+    color: '#F4C430',
+    popular: true,
+    buttonText: 'Choose Standard',
+    features: [
+      { text: 'Up to 50 custom job notifications per day', enabled: true },
+      { text: 'Priority in search results', enabled: true },
+      { text: 'Advanced filtering options', enabled: true },
+      { text: 'Resume visibility boost', enabled: true },
+      { text: 'Cannot post job ads', enabled: false }
+    ],
+    adsEnabled: false
+  },
+  {
+    id: 'enterprise',
+    name: 'Enterprise',
+    priceMonthly: 15000,
+    priceYearly: 150000,
+    icon: 'business',
+    color: '#1A365D',
+    popular: false,
+    buttonText: 'Contact Sales',
+    features: [
+      { text: 'Post unlimited job ads', enabled: true },
+      { text: 'Accept and manage resumes', enabled: true },
+      { text: 'Detailed job market statistics', enabled: true },
+      { text: 'Applicant tracking system', enabled: true },
+      { text: 'Company branding & logo display', enabled: true },
+      { text: 'Featured job placements', enabled: true },
+      { text: 'Priority support & account manager', enabled: true }
+    ],
+    adsEnabled: false
+  }
+];
+
 // Multi-language translations
 const translations = {
   en: {
@@ -79,7 +141,7 @@ const translations = {
     searchPlaceholder: 'Search jobs...',
     login: 'Login',
     signUp: 'Sign Up',
-    exploreChannels: '🚀 Explore Telegram Channels',
+    exploreChannels: 'Multiple Job Sources',
     swipeHint: '← Swipe to explore more channels →',
     recentJobs: 'Recent Jobs',
     jobsFound: 'jobs found',
@@ -192,8 +254,9 @@ const translations = {
 const getColors = (isDarkMode: boolean) => isDarkMode ? darkColors : lightColors;
 
 // Login Screen
-function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState('nathanmersha@gmail.com');
+function LoginScreen({ navigation, route }: any) {
+  const initialEmail = route?.params?.prefillEmail || '';
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -208,6 +271,62 @@ function LoginScreen({ navigation }) {
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
       const user = userCredential.user;
       
+      // Reload user to get latest email verification status
+      await user.reload();
+      const updatedUser = auth.currentUser;
+      
+      // Check if email is verified
+      if (!updatedUser?.emailVerified) {
+        // User hasn't verified their email
+        // Don't sign out - keep them signed in to resend verification
+        navigation.navigate('VerificationRequired', { userEmail: email, keepSignedIn: true });
+        setLoading(false);
+        return;
+      }
+      
+      // Update isVerified in Firestore if email is verified but DB shows false
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        
+        // Update isVerified if it's false but email is verified
+        if (!userData.isVerified && updatedUser.emailVerified) {
+          await updateDoc(doc(db, 'users', user.uid), {
+            isVerified: true,
+            updatedAt: new Date()
+          });
+          console.log('✅ Updated isVerified to true in Firestore');
+        }
+        
+        // Check user role and redirect accordingly
+        if (userData.role === 'superadmin') {
+          navigation.replace('AdminPanel');
+        } else if (userData.isVerified && userData.isActive) {
+          // Verified and active users go to Jobs page
+          navigation.replace('Jobs');
+        } else if (!userData.isActive) {
+          Alert.alert('Account Inactive', 'Your account has been deactivated. Please contact support.');
+          await signOut(auth);
+        } else {
+          Alert.alert('Access Denied', 'Please verify your email to continue');
+          await signOut(auth);
+        }
+      } else {
+        Alert.alert('Error', 'User profile not found');
+        await signOut(auth);
+      }
+    } catch (error: any) {
+      Alert.alert('Login Failed', error.message);
+    }
+    setLoading(false);
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+
       // Check if user is admin
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       if (userDoc.exists() && userDoc.data().role === 'superadmin') {
@@ -216,10 +335,22 @@ function LoginScreen({ navigation }) {
         Alert.alert('Access Denied', 'You do not have admin privileges');
         await signOut(auth);
       }
-    } catch (error) {
-      Alert.alert('Login Failed', error.message);
+    } catch (error: any) {
+      // If the Google account email already exists with a different sign-in method
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        const emailFromError = error.customData?.email || error.email || '';
+        Alert.alert(
+          'Account Exists',
+          'An account already exists with this email. Please sign in using your email and password. We will prefill your email on the login screen.',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Go to Login', onPress: () => navigation.navigate('Login', { prefillEmail: emailFromError }) }
+          ]
+        );
+      } else {
+        Alert.alert('Google Login Failed', error.message);
+      }
     }
-    setLoading(false);
   };
 
   return (
@@ -236,13 +367,13 @@ function LoginScreen({ navigation }) {
         <View style={styles.loginForm}>
           <View style={styles.inputContainer}>
             <View style={styles.inputGroup}>
-              <Icon name="email" size={20} color={colors.warmGray} style={styles.inputIcon} />
+              <Icon name="email" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
               <TextInput
                 style={styles.modernInput}
                 value={email}
                 onChangeText={setEmail}
                 placeholder="Email address"
-                placeholderTextColor={colors.warmGray}
+                placeholderTextColor={lightColors.warmGray}
                 keyboardType="email-address"
                 autoCapitalize="none"
               />
@@ -251,13 +382,13 @@ function LoginScreen({ navigation }) {
 
           <View style={styles.inputContainer}>
             <View style={styles.inputGroup}>
-              <Icon name="lock" size={20} color={colors.warmGray} style={styles.inputIcon} />
+              <Icon name="lock" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
               <TextInput
                 style={styles.modernInput}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="Password"
-                placeholderTextColor={colors.warmGray}
+                placeholderTextColor={lightColors.warmGray}
                 secureTextEntry
               />
             </View>
@@ -275,10 +406,45 @@ function LoginScreen({ navigation }) {
             ) : (
               <View style={styles.buttonContent}>
                 <Text style={styles.modernLoginButtonText}>Sign In</Text>
-                <Icon name="arrow-forward" size={20} color={colors.white} />
+                <Icon name="arrow-forward" size={20} color={lightColors.white} />
               </View>
             )}
           </TouchableOpacity>
+
+          {/* Forgot Password Link */}
+          <TouchableOpacity 
+            style={styles.forgotPasswordLink}
+            onPress={() => navigation.navigate('ForgotPassword')}
+          >
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
+
+          {/* Divider */}
+          <View style={styles.dividerContainer}>
+            <View style={styles.divider} />
+            <Text style={styles.dividerText}>OR</Text>
+            <View style={styles.divider} />
+          </View>
+
+          {/* Google Sign In Button */}
+          <TouchableOpacity 
+            style={styles.googleButton}
+            onPress={handleGoogleLogin}
+          >
+            <Image 
+              source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+              style={{ width: 20, height: 20, marginRight: 8 }}
+            />
+            <Text style={styles.googleButtonText}>Sign in with Google</Text>
+          </TouchableOpacity>
+
+          {/* Signup Link */}
+          <View style={styles.signupLinkContainer}>
+            <Text style={styles.signupLinkText}>Don't have an account? </Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+              <Text style={styles.signupLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Footer */}
@@ -286,7 +452,7 @@ function LoginScreen({ navigation }) {
           style={styles.backToHome}
           onPress={() => navigation.navigate('Home')}
         >
-          <Icon name="arrow-back" size={16} color={colors.softBlue} />
+          <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
           <Text style={styles.backToHomeText}>Back to Home</Text>
         </TouchableOpacity>
       </View>
@@ -294,17 +460,1952 @@ function LoginScreen({ navigation }) {
   );
 }
 
+// Verification Required Screen
+function VerificationRequiredScreen({ route, navigation }: any) {
+  const { userEmail, keepSignedIn } = route.params || {};
+  const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  // Sign out when navigating back to login or home
+  const handleBackToLogin = async () => {
+    const auth = getAuth();
+    if (auth.currentUser) {
+      await signOut(auth);
+    }
+    navigation.navigate('Login');
+  };
+
+  const handleBackToHome = async () => {
+    const auth = getAuth();
+    if (auth.currentUser) {
+      await signOut(auth);
+    }
+    navigation.navigate('Home');
+  };
+
+  const handleResendEmail = async () => {
+    if (!userEmail) {
+      Alert.alert('Error', 'Email address is required');
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      const auth = getAuth();
+      const user = auth.currentUser;
+      
+      if (!user) {
+        Alert.alert(
+          'Error', 
+          'You need to be signed in to resend verification email. Please try logging in again.'
+        );
+        setLoading(false);
+        navigation.navigate('Login');
+        return;
+      }
+
+      // Send verification email with action code settings
+      await sendEmailVerification(user, {
+        url: 'http://localhost:19006/login',
+        handleCodeInApp: false,
+      });
+
+      setEmailSent(true);
+      
+      Alert.alert(
+        'Email Sent!',
+        `A new verification email has been sent to ${userEmail}. Please check your inbox and spam folder.`,
+        [{ text: 'OK' }]
+      );
+    } catch (error: any) {
+      console.error('Error resending verification email:', error);
+      
+      let errorMessage = 'Failed to send verification email. Please try again.';
+      
+      if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many requests. Please wait a moment before trying again.';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.loginContainer}>
+        <View style={styles.loginHeader}>
+          <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
+          <Text style={styles.loginTitle}>NibJobs</Text>
+          <Text style={styles.loginSubtitle}>Email Verification Required</Text>
+        </View>
+
+        <View style={styles.loginForm}>
+          <View style={styles.verificationMessageContainer}>
+            <Icon name="mark-email-unread" size={64} color={lightColors.beeYellow} style={{ marginBottom: 20 }} />
+            <Text style={styles.verificationTitle}>Email Not Verified</Text>
+            <Text style={styles.verificationMessage}>
+              Your email address has not been verified yet.
+            </Text>
+            {userEmail && (
+              <Text style={styles.verificationEmail}>{userEmail}</Text>
+            )}
+            <Text style={styles.verificationMessage}>
+              Please check your inbox (and spam folder) for the verification email and click the link to verify your account.
+            </Text>
+
+            {emailSent && (
+              <View style={styles.successMessageContainer}>
+                <Icon name="check-circle" size={20} color={lightColors.success} style={{ marginRight: 8 }} />
+                <Text style={styles.successMessageText}>
+                  Verification email sent! Check your inbox.
+                </Text>
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.modernLoginButton, loading && styles.buttonDisabled]}
+              onPress={handleResendEmail}
+              disabled={loading}
+            >
+              <View style={styles.buttonContent}>
+                {loading ? (
+                  <ActivityIndicator size="small" color={lightColors.deepNavy} />
+                ) : (
+                  <>
+                    <Icon name="email" size={20} color={lightColors.deepNavy} style={{ marginRight: 8 }} />
+                    <Text style={styles.modernLoginButtonText}>Resend Verification Email</Text>
+                  </>
+                )}
+              </View>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={[styles.modernSecondaryButton, { marginTop: 40 }]}
+              onPress={handleBackToLogin}
+            >
+              <Text style={styles.modernSecondaryButtonText}>Back to Login</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity 
+              style={styles.backToHome}
+              onPress={handleBackToHome}
+            >
+              <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
+              <Text style={styles.backToHomeText}>Back to Home</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Forgot Password Screen
+function ForgotPasswordScreen({ navigation }: any) {
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const actionCodeSettings = {
+        url: `${window.location.origin}/login`,
+        handleCodeInApp: false,
+      };
+      
+      await sendPasswordResetEmail(auth, email, actionCodeSettings);
+      setEmailSent(true);
+    } catch (error: any) {
+      if (error.code === 'auth/user-not-found') {
+        Alert.alert('Error', 'No account found with this email address');
+      } else if (error.code === 'auth/invalid-email') {
+        Alert.alert('Error', 'Invalid email address');
+      } else {
+        Alert.alert('Error', error.message || 'Failed to send password reset email');
+      }
+    }
+    setLoading(false);
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.loginContainer}>
+        {emailSent ? (
+          // Password Reset Email Sent
+          <>
+            <View style={styles.loginHeader}>
+              <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
+              <Text style={styles.loginTitle}>NibJobs</Text>
+              <Text style={styles.loginSubtitle}>Check Your Email</Text>
+            </View>
+
+            <View style={styles.loginForm}>
+              <View style={styles.verificationMessageContainer}>
+                <Icon name="mark-email-read" size={64} color={lightColors.beeYellow} style={{ marginBottom: 20 }} />
+                <Text style={styles.verificationTitle}>Password Reset Email Sent!</Text>
+                <Text style={styles.verificationMessage}>
+                  We've sent password reset instructions to:
+                </Text>
+                <Text style={styles.verificationEmail}>{email}</Text>
+                <Text style={styles.verificationMessage}>
+                  Please check your inbox (and spam folder) and follow the link to reset your password.
+                </Text>
+                
+                <TouchableOpacity 
+                  style={styles.modernLoginButton}
+                  onPress={() => navigation.navigate('Login')}
+                >
+                  <View style={styles.buttonContent}>
+                    <Text style={styles.modernLoginButtonText}>Back to Login</Text>
+                    <Icon name="arrow-forward" size={20} color={lightColors.deepNavy} />
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.backToHome}
+                  onPress={() => navigation.navigate('Home')}
+                >
+                  <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
+                  <Text style={styles.backToHomeText}>Back to Home</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        ) : (
+          // Forgot Password Form
+          <>
+            <View style={styles.loginHeader}>
+              <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
+              <Text style={styles.loginTitle}>NibJobs</Text>
+              <Text style={styles.loginSubtitle}>Reset Your Password</Text>
+            </View>
+
+            <View style={styles.loginForm}>
+              <Text style={styles.forgotPasswordDescription}>
+                Enter your email address and we'll send you instructions to reset your password.
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <View style={styles.inputGroup}>
+                  <Icon name="email" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.modernInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Email address"
+                    placeholderTextColor={lightColors.warmGray}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.modernLoginButton, loading && styles.loginButtonDisabled]}
+                onPress={handleResetPassword}
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.loadingButtonContent}>
+                    <Text style={styles.modernLoginButtonText}>Sending...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Text style={styles.modernLoginButtonText}>Send Reset Link</Text>
+                    <Icon name="arrow-forward" size={20} color={lightColors.deepNavy} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              <View style={{ alignItems: 'center', marginTop: 40 }}>
+                <TouchableOpacity 
+                  style={[styles.modernSecondaryButton, { alignSelf: 'center', width: 'auto', paddingHorizontal: 32 }]}
+                  onPress={() => navigation.navigate('Login')}
+                >
+                  <Text style={styles.modernSecondaryButtonText}>Back to Login</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity 
+                style={styles.backToHome}
+                onPress={() => navigation.navigate('Home')}
+              >
+                <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
+                <Text style={styles.backToHomeText}>Back to Home</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Signup Screen
+function SignupScreen({ navigation }: any) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [userEmail, setUserEmail] = useState('');
+
+  const handleSignup = async () => {
+    if (!email || !password || !fullName) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters long');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      console.log('🔄 Creating user account for:', email);
+      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const user = userCredential.user;
+      
+      // Send email verification
+      console.log('📧 Sending verification email to:', user.email);
+      try {
+        const actionCodeSettings = {
+          url: `${window.location.origin}/login`, // Redirect to login page after verification
+          handleCodeInApp: false,
+        };
+        await sendEmailVerification(user, actionCodeSettings);
+        console.log('✅ Verification email sent successfully!');
+      } catch (emailError: any) {
+        console.error('❌ Failed to send verification email:', emailError);
+      }
+      
+      // Create user document in Firestore matching superadmin schema
+      console.log('💾 Creating user profile in Firestore...');
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        email: email,
+        displayName: fullName,
+        role: 'user',
+        subscriptionId: 'free',
+        subscriptionStatus: 'active',
+        subscriptionStartDate: new Date(),
+        subscriptionEndDate: null,
+        isVerified: false,
+        isActive: true,
+        lastLogin: new Date(),
+        permissions: [],
+        profile: {
+          avatar: '',
+          bio: '',
+          phone: ''
+        },
+        fcmTokens: [],
+        selectedCategories: [],
+        isNotificationsEnabled: false,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      console.log('✅ User profile created in Firestore');
+      
+      // Set state to show verification message
+      setUserEmail(email);
+      setEmailSent(true);
+    } catch (error: any) {
+      console.error('❌ Signup failed:', error);
+      if (error.code === 'auth/email-already-in-use') {
+        Alert.alert('Error', 'This email is already registered');
+      } else if (error.code === 'auth/invalid-email') {
+        Alert.alert('Error', 'Invalid email address');
+      } else {
+        Alert.alert('Signup Failed', error.message);
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleGoogleSignup = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      // Check if user document exists
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      if (!userDoc.exists()) {
+        // Create new user document for first-time Google sign-in
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          email: user.email || '',
+          displayName: user.displayName || 'User',
+          role: 'reader',
+          subscriptionId: 'free',
+          subscriptionStatus: 'active',
+          subscriptionStartDate: new Date(),
+          subscriptionEndDate: null,
+          isVerified: true, // Google users are pre-verified
+          isActive: true,
+          lastLogin: new Date(),
+          permissions: [],
+          profile: {
+            avatar: user.photoURL || '',
+            bio: '',
+            phone: ''
+          },
+          fcmTokens: [],
+          selectedCategories: [],
+          isNotificationsEnabled: false,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+        Alert.alert('Success', 'Signed up with Google successfully!');
+      } else {
+        // User already exists (previously signed up with email/password)
+        // Update their last login and verification status
+        await setDoc(userDocRef, {
+          lastLogin: new Date(),
+          isVerified: true, // Mark as verified since they're using Google
+          updatedAt: new Date(),
+        }, { merge: true });
+        Alert.alert('Success', 'Logged in successfully!');
+      }
+      
+      navigation.replace('Home');
+    } catch (error: any) {
+      // Handle account-exists-with-different-credential error
+      if (error.code === 'auth/account-exists-with-different-credential') {
+        Alert.alert(
+          'Account Exists',
+          'An account already exists with this email. Please sign in using your original method (email/password) or contact support to link your accounts.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert('Google Sign-In Failed', error.message);
+      }
+    }
+  };
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView contentContainerStyle={styles.loginContainer}>
+        {emailSent ? (
+          // Verification Email Sent Message
+          <>
+            <View style={styles.loginHeader}>
+              <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
+              <Text style={styles.loginTitle}>NibJobs</Text>
+              <Text style={styles.loginSubtitle}>Check Your Email</Text>
+            </View>
+
+            <View style={styles.loginForm}>
+              <View style={styles.verificationMessageContainer}>
+                <Icon name="email" size={64} color={lightColors.beeYellow} style={{ marginBottom: 20 }} />
+                <Text style={styles.verificationTitle}>Verification Email Sent!</Text>
+                <Text style={styles.verificationMessage}>
+                  We've sent a verification email to:
+                </Text>
+                <Text style={styles.verificationEmail}>{userEmail}</Text>
+                <Text style={styles.verificationMessage}>
+                  Please check your inbox (and spam folder) and click the verification link to activate your account.
+                </Text>
+                
+                <TouchableOpacity 
+                  style={styles.modernLoginButton}
+                  onPress={() => navigation.replace('Login')}
+                >
+                  <View style={styles.buttonContent}>
+                    <Text style={styles.modernLoginButtonText}>Go to Login</Text>
+                    <Icon name="arrow-forward" size={20} color={lightColors.deepNavy} />
+                  </View>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={styles.backToHome}
+                  onPress={() => navigation.navigate('Home')}
+                >
+                  <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
+                  <Text style={styles.backToHomeText}>Back to Home</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        ) : (
+          // Signup Form
+          <>
+            <View style={styles.loginHeader}>
+              <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
+              <Text style={styles.loginTitle}>NibJobs</Text>
+              <Text style={styles.loginSubtitle}>Create Your Account</Text>
+            </View>
+            
+            <View style={styles.loginForm}>
+              <View style={styles.inputContainer}>
+                <View style={styles.inputGroup}>
+                  <Icon name="person" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.modernInput}
+                    value={fullName}
+                    onChangeText={setFullName}
+                    placeholder="Full Name"
+                    placeholderTextColor={lightColors.warmGray}
+                    autoCapitalize="words"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <View style={styles.inputGroup}>
+                  <Icon name="email" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.modernInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder="Email address"
+                    placeholderTextColor={lightColors.warmGray}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <View style={styles.inputGroup}>
+                  <Icon name="lock" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.modernInput}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder="Password (min 6 characters)"
+                    placeholderTextColor={lightColors.warmGray}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+
+              <View style={styles.inputContainer}>
+                <View style={styles.inputGroup}>
+                  <Icon name="lock-outline" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
+                  <TextInput
+                    style={styles.modernInput}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    placeholder="Confirm Password"
+                    placeholderTextColor={lightColors.warmGray}
+                    secureTextEntry
+                  />
+                </View>
+              </View>
+
+              <TouchableOpacity 
+                style={[styles.modernLoginButton, loading && styles.loginButtonDisabled]} 
+                onPress={handleSignup}
+                disabled={loading}
+              >
+                {loading ? (
+                  <View style={styles.loadingButtonContent}>
+                    <Text style={styles.modernLoginButtonText}>Creating Account...</Text>
+                  </View>
+                ) : (
+                  <View style={styles.buttonContent}>
+                    <Text style={styles.modernLoginButtonText}>Sign Up</Text>
+                    <Icon name="arrow-forward" size={20} color={lightColors.deepNavy} />
+                  </View>
+                )}
+              </TouchableOpacity>
+
+              {/* Divider */}
+              <View style={styles.dividerContainer}>
+                <View style={styles.divider} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.divider} />
+              </View>
+
+              {/* Google Sign In Button */}
+              <TouchableOpacity 
+                style={styles.googleButton}
+                onPress={handleGoogleSignup}
+              >
+                <Image 
+                  source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+                  style={{ width: 20, height: 20, marginRight: 8 }}
+                />
+                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+              </TouchableOpacity>
+
+              {/* Login Link */}
+              <View style={styles.signupLinkContainer}>
+                <Text style={styles.signupLinkText}>Already have an account? </Text>
+                <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                  <Text style={styles.signupLink}>Log In</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Footer */}
+            <TouchableOpacity 
+              style={styles.backToHome}
+              onPress={() => navigation.navigate('Home')}
+            >
+              <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
+              <Text style={styles.backToHomeText}>Back to Home</Text>
+            </TouchableOpacity>
+          </>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Job Details Screen
+function JobDetailsScreen({ route, navigation }: any) {
+  const { id } = route.params;
+  const [job, setJob] = useState<any>(null);
+  const [relatedJobs, setRelatedJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isSaved, setIsSaved] = useState(false);
+  
+  // Theme and Language states for toolbar
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const languageButtonRef = useRef<TouchableOpacity>(null);
+  
+  // Search functionality
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  
+  // Responsive design
+  const [dimensions, setDimensions] = useState(Dimensions.get('window'));
+  const isMobile = dimensions.width < 480;
+  const isTablet = dimensions.width >= 480 && dimensions.width < 768;
+  const isDesktop = dimensions.width >= 768;
+
+  useEffect(() => {
+    const subscription = Dimensions.addEventListener('change', ({ window }) => {
+      setDimensions(window);
+    });
+    return () => subscription?.remove();
+  }, []);
+  
+  const colors = getColors(isDarkMode);
+  const t = translations[currentLanguage as keyof typeof translations];
+  
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'am', label: 'አማርኛ' },
+    { code: 'ti', label: 'ትግርኛ' },
+    { code: 'or', label: 'Afaan Oromoo' }
+  ];
+  
+  const getCurrentLanguage = () => {
+    return languageOptions.find(lang => lang.code === currentLanguage) || languageOptions[0];
+  };
+  
+  const toggleTheme = () => setIsDarkMode(!isDarkMode);
+  const toggleLanguageDropdown = () => setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
+  const handleLanguageSelect = (langCode: string) => {
+    setCurrentLanguage(langCode);
+    setIsLanguageDropdownOpen(false);
+  };
+  
+  const handleLogin = () => navigation.navigate('Login');
+  const handleGooglePlayDownload = () => {
+    const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.nibjobs.app';
+    Linking.openURL(playStoreUrl);
+  };
+  
+  // Search functionality
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
+    if (query.trim().length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    
+    setIsSearching(true);
+    try {
+      const jobsRef = collection(db, 'jobs');
+      const q = dbQuery(
+        jobsRef,
+        where('status', '==', 'active'),
+        limit(10)
+      );
+      
+      const snapshot = await getDocs(q);
+      const results = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((job: any) => 
+          job.title.toLowerCase().includes(query.toLowerCase()) ||
+          job.company?.toLowerCase().includes(query.toLowerCase()) ||
+          job.location?.toLowerCase().includes(query.toLowerCase())
+        );
+      
+      setSearchResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setSearchResults([]);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+  
+  const handleSearchJobClick = (jobId: string) => {
+    setSearchQuery('');
+    setSearchResults([]);
+    setIsSearchExpanded(false);
+    navigation.push('JobDetails', { id: jobId });
+  };
+  
+  const toggleSearch = () => {
+    setIsSearchExpanded(!isSearchExpanded);
+    if (!isSearchExpanded) {
+      setSearchQuery('');
+      setSearchResults([]);
+    }
+  };
+  
+  const dynamicStyles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: colors.white,
+    },
+  });
+
+
+  useEffect(() => {
+    const fetchJobDetails = async () => {
+      try {
+        setLoading(true);
+        // Fetch job details
+        const jobDoc = await getDoc(doc(db, 'jobs', id));
+        if (jobDoc.exists()) {
+          const jobData = { id: jobDoc.id, ...jobDoc.data() };
+          setJob(jobData);
+          
+          // Debug: Log available image fields
+          console.log('Available image fields:', {
+            sourceImageUrl: jobData.sourceImageUrl,
+            sourceChannelImageUrl: jobData.sourceChannelImageUrl,
+            channelImageUrl: jobData.channelImageUrl
+          });
+          
+          // Check if job is saved
+          const currentUser = auth.currentUser;
+          if (currentUser) {
+            const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+            const savedJobs = userDoc.data()?.savedJobs || [];
+            setIsSaved(savedJobs.includes(id));
+          }
+          
+          // Fetch related jobs (same category, limit 5)
+          if ((jobData as any).category || (jobData as any).categoryId) {
+            const relatedQuery = dbQuery(
+              collection(db, 'jobs'),
+              orderBy('createdAt', 'desc'),
+              limit(6)
+            );
+            const relatedSnapshot = await getDocs(relatedQuery);
+            const related = relatedSnapshot.docs
+              .map(doc => ({ id: doc.id, ...doc.data() as any }))
+              .filter((j: any) => 
+                j.id !== id && 
+                (j.category === (jobData as any).category || j.categoryId === (jobData as any).categoryId)
+              )
+              .slice(0, 5);
+            setRelatedJobs(related);
+          }
+        } else {
+          Alert.alert('Error', 'Job not found');
+          navigation.goBack();
+        }
+      } catch (error) {
+        console.error('Error fetching job:', error);
+        Alert.alert('Error', 'Failed to load job details');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (id) {
+      fetchJobDetails();
+    }
+  }, [id]);
+
+  const handleSaveJob = async () => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      Alert.alert('Authentication Required', 'Please login to save jobs');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userRef);
+      const savedJobs = userDoc.data()?.savedJobs || [];
+      
+      if (isSaved) {
+        // Remove from saved jobs
+        await updateDoc(userRef, {
+          savedJobs: savedJobs.filter((jobId: string) => jobId !== id)
+        });
+        setIsSaved(false);
+        Alert.alert('Success', 'Job removed from saved jobs');
+      } else {
+        // Add to saved jobs
+        await updateDoc(userRef, {
+          savedJobs: [...savedJobs, id]
+        });
+        setIsSaved(true);
+        Alert.alert('Success', 'Job saved successfully');
+      }
+    } catch (error) {
+      console.error('Error saving job:', error);
+      Alert.alert('Error', 'Failed to save job');
+    }
+  };
+
+  const handleShareJob = async () => {
+    const jobUrl = `https://nibjobs.com/job/${id}`;
+    const message = `Check out this job: ${job.title} at ${job.company}\n${jobUrl}`;
+    
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: job.title,
+          text: message,
+          url: jobUrl,
+        });
+      } catch (error) {
+        console.log('Error sharing:', error);
+      }
+    } else {
+      // Fallback: copy to clipboard
+      Alert.alert('Share', `Job URL: ${jobUrl}`);
+    }
+  };
+
+  const handleApply = async () => {
+    if (!job) return;
+    
+    // Open Telegram message URL for job applications
+    const telegramUrl = job.telegramMessageUrl || job.telegramLink || 'https://t.me/nibjobseth';
+    
+    try {
+      const supported = await Linking.canOpenURL(telegramUrl);
+      if (supported) {
+        await Linking.openURL(telegramUrl);
+      } else {
+        // Fallback to window.open for web
+        if (typeof window !== 'undefined') {
+          window.open(telegramUrl, '_blank');
+        } else {
+          Alert.alert('Error', 'Unable to open Telegram link');
+        }
+      }
+    } catch (error) {
+      console.error('Error opening Telegram link:', error);
+      Alert.alert('Error', 'Failed to open Telegram link');
+    }
+  };
+
+  const formatDate = (date: any) => {
+    if (!date) return 'Recently posted';
+    if (date.seconds) {
+      return new Date(date.seconds * 1000).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    }
+    return new Date(date).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric'
+    });
+  };
+
+  const getTimeAgo = (date: any) => {
+    if (!date) return 'Recently';
+    const dateObj = date.seconds ? new Date(date.seconds * 1000) : new Date(date);
+    const seconds = Math.floor((new Date().getTime() - dateObj.getTime()) / 1000);
+    
+    let interval = seconds / 31536000;
+    if (interval > 1) return Math.floor(interval) + ' years ago';
+    interval = seconds / 2592000;
+    if (interval > 1) return Math.floor(interval) + ' months ago';
+    interval = seconds / 86400;
+    if (interval > 1) return Math.floor(interval) + ' days ago';
+    interval = seconds / 3600;
+    if (interval > 1) return Math.floor(interval) + ' hours ago';
+    interval = seconds / 60;
+    if (interval > 1) return Math.floor(interval) + ' minutes ago';
+    return 'Just now';
+  };
+
+  if (loading || !job) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Loading job details...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={dynamicStyles.container}>
+      {/* Enhanced Modern Toolbar */}
+      <View style={styles.modernToolbar}>
+        <View style={styles.modernToolbarContent}>
+          {/* Left Section - Logo & Navigation */}
+          <View style={styles.modernToolbarLeft}>
+            <TouchableOpacity 
+              style={styles.modernBackButton} 
+              onPress={() => navigation.goBack()}
+            >
+              <Icon name="arrow-back" size={22} color={colors.deepNavy} />
+            </TouchableOpacity>
+            
+            <TouchableOpacity style={styles.modernToolbarLogo} onPress={() => navigation.navigate('Home')}>
+              <View style={styles.modernToolbarLogoBadge}>
+                <Image source={require('./assets/favicon.png')} style={styles.modernToolbarLogoImage} />
+              </View>
+            </TouchableOpacity>
+            
+            {/* Navigation Links (Desktop) */}
+            {isDesktop && (
+              <View style={styles.modernToolbarNav}>
+                <TouchableOpacity style={styles.modernToolbarNavItem} onPress={() => navigation.navigate('Home')}>
+                  <Icon name="work-outline" size={18} color={colors.deepNavy} />
+                  <Text style={styles.modernToolbarNavText}>Jobs</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.modernToolbarNavItem}>
+                  <Icon name="business-center" size={18} color={colors.deepNavy} />
+                  <Text style={styles.modernToolbarNavText}>Companies</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+
+          {/* Center Section - Search Bar */}
+          <View style={styles.modernToolbarCenter}>
+            {(isSearchExpanded || isDesktop) && (
+              <View style={styles.modernSearchContainer}>
+                <Icon name="search" size={20} color={colors.warmGray} style={styles.modernSearchIcon} />
+                <TextInput
+                  style={styles.modernSearchInput}
+                  placeholder="Search jobs, companies..."
+                  placeholderTextColor={colors.warmGray}
+                  value={searchQuery}
+                  onChangeText={handleSearch}
+                  autoFocus={isSearchExpanded && isMobile}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
+                    <Icon name="close" size={20} color={colors.warmGray} />
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+            
+            {/* Search Results Dropdown */}
+            {searchResults.length > 0 && (
+              <View style={styles.modernSearchResults}>
+                <ScrollView style={{ maxHeight: 400 }}>
+                  {searchResults.map((result: any) => (
+                    <TouchableOpacity
+                      key={result.id}
+                      style={styles.modernSearchResultItem}
+                      onPress={() => handleSearchJobClick(result.id)}
+                    >
+                      <View style={styles.modernSearchResultIcon}>
+                        <Icon name="work-outline" size={20} color={colors.beeYellow} />
+                      </View>
+                      <View style={styles.modernSearchResultContent}>
+                        <Text style={styles.modernSearchResultTitle}>{result.title}</Text>
+                        <Text style={styles.modernSearchResultMeta}>
+                          {result.company} • {result.location}
+                        </Text>
+                      </View>
+                      <Icon name="chevron-right" size={20} color={colors.warmGray} />
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              </View>
+            )}
+            
+            {isSearching && (
+              <View style={styles.modernSearchLoading}>
+                <ActivityIndicator size="small" color={colors.beeYellow} />
+                <Text style={styles.modernSearchLoadingText}>Searching...</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Right Section - Actions */}
+          <View style={styles.modernToolbarRight}>
+            {/* Search Toggle (Mobile) */}
+            {isMobile && !isSearchExpanded && (
+              <TouchableOpacity style={styles.modernIconButton} onPress={toggleSearch}>
+                <Icon name="search" size={22} color={colors.deepNavy} />
+              </TouchableOpacity>
+            )}
+            
+            {(!isSearchExpanded || isDesktop) && (
+              <>
+                {/* Save Job */}
+                <TouchableOpacity 
+                  style={styles.modernIconButton}
+                  onPress={handleSaveJob}
+                >
+                  <Icon 
+                    name={isSaved ? "bookmark" : "bookmark-border"} 
+                    size={22} 
+                    color={isSaved ? colors.beeYellow : colors.deepNavy} 
+                  />
+                </TouchableOpacity>
+
+                {/* Share */}
+                <TouchableOpacity 
+                  style={styles.modernIconButton}
+                  onPress={handleShareJob}
+                >
+                  <Icon name="share" size={22} color={colors.deepNavy} />
+                </TouchableOpacity>
+                
+                {/* Language */}
+                <TouchableOpacity 
+                  style={styles.modernLanguageButton} 
+                  onPress={toggleLanguageDropdown}
+                >
+                  <Text style={styles.modernLanguageText}>{getCurrentLanguage().code.toUpperCase()}</Text>
+                  <Icon 
+                    name={isLanguageDropdownOpen ? "expand-less" : "expand-more"} 
+                    size={16} 
+                    color={colors.deepNavy} 
+                  />
+                </TouchableOpacity>
+
+                {/* Login/Signup Buttons (desktop only) */}
+                {!isMobile && (
+                  <>
+                    <TouchableOpacity style={styles.modernSecondaryButton} onPress={handleLogin}>
+                      <Text style={styles.modernSecondaryButtonText}>{t.login}</Text>
+                    </TouchableOpacity>
+                    
+                    <TouchableOpacity style={styles.modernPrimaryButton} onPress={() => navigation.navigate('Signup')}>
+                      <Icon name="person-add" size={18} color={colors.white} />
+                      <Text style={styles.modernPrimaryButtonText}>{t.signUp}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+              </>
+            )}
+            
+            {/* Close Search (Mobile) */}
+            {isMobile && isSearchExpanded && (
+              <TouchableOpacity style={styles.modernIconButton} onPress={toggleSearch}>
+                <Icon name="close" size={22} color={colors.deepNavy} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Language Dropdown */}
+        {isLanguageDropdownOpen && (
+          <View style={styles.languageDropdown}>
+            {languageOptions.map((lang) => (
+              <TouchableOpacity
+                key={lang.code}
+                style={styles.languageOption}
+                onPress={() => handleLanguageSelect(lang.code)}
+              >
+                <Text style={[
+                  { fontSize: 14, fontFamily: 'Inter-Regular', color: colors.deepNavy },
+                  currentLanguage === lang.code && { color: colors.beeYellow, fontFamily: 'Inter-SemiBold' }
+                ]}>
+                  {lang.label}
+                </Text>
+                {currentLanguage === lang.code && (
+                  <Icon name="check" size={16} color={colors.beeYellow} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={styles.jobDetailsMainContainer}>
+        {/* Main Content with Sticky Apply Button */}
+        <View style={{ flex: 1, position: 'relative' }}>
+          <ScrollView style={styles.jobDetailsContent} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* Job Header Card */}
+          <View style={styles.jobHeaderCard}>
+            <View style={styles.jobHeaderTop}>
+              <View style={styles.jobDetailsIconContainer}>
+                {job.sourceImageUrl ? (
+                  <Image
+                    source={{ uri: job.sourceImageUrl }}
+                    style={styles.companyLogo}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.companyLogoPlaceholder}>
+                    <Icon name="business" size={48} color={colors.beeYellow} />
+                  </View>
+                )}
+              </View>
+              <View style={styles.jobHeaderInfo}>
+                <Text style={styles.jobDetailsTitle}>{job.title}</Text>
+                <Text style={styles.jobDetailsCompany}>{job.company}</Text>
+                <View style={styles.jobMetaRow}>
+                  <View style={styles.jobMetaItem}>
+                    <Icon name="schedule" size={14} color={colors.warmGray} />
+                    <Text style={styles.jobPostedTime}>{getTimeAgo(job.postedDate || job.createdAt)}</Text>
+                  </View>
+                  {job.location && (
+                    <View style={styles.jobMetaItem}>
+                      <Icon name="location-on" size={14} color={colors.danger} />
+                      <Text style={styles.jobPostedTime}>{job.location}</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+            
+            {/* Badges */}
+            <View style={styles.jobDetailsBadges}>
+              {job.contractType && (
+                <View style={styles.jobDetailsBadge}>
+                  <Icon name="description" size={14} color={colors.softBlue} />
+                  <Text style={styles.jobDetailsBadgeText}>{job.contractType}</Text>
+                </View>
+              )}
+              {job.isRemote && (
+                <View style={[styles.jobDetailsBadge, styles.remoteBadgeLarge]}>
+                  <Icon name="home-work" size={14} color={colors.success} />
+                  <Text style={styles.remoteBadgeTextLarge}>Remote</Text>
+                </View>
+              )}
+              {job.experienceLevel && (
+                <View style={styles.jobDetailsBadge}>
+                  <Icon name="military-tech" size={14} color={colors.honeyGold} />
+                  <Text style={styles.jobDetailsBadgeText}>{job.experienceLevel}</Text>
+                </View>
+              )}
+              {job.category && (
+                <View style={[styles.jobDetailsBadge, styles.categoryBadgeLarge]}>
+                  <Icon name="category" size={14} color={colors.softBlue} />
+                  <Text style={styles.categoryBadgeTextLarge}>{job.category}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Quick Stats */}
+            {(job.applicants || job.views) && (
+              <View style={styles.quickStatsContainer}>
+                {job.applicants && (
+                  <View style={styles.quickStat}>
+                    <Icon name="people" size={18} color={colors.softBlue} />
+                    <Text style={styles.quickStatText}>{job.applicants} applicants</Text>
+                  </View>
+                )}
+                {job.views && (
+                  <View style={styles.quickStat}>
+                    <Icon name="visibility" size={18} color={colors.warmGray} />
+                    <Text style={styles.quickStatText}>{job.views} views</Text>
+                  </View>
+                )}
+              </View>
+            )}
+            
+            {/* Job Matching Score (if user is logged in) */}
+            {auth.currentUser && job.matchScore && (
+              <View style={styles.matchScoreCard}>
+                <View style={styles.matchScoreHeader}>
+                  <View style={styles.matchScoreLeft}>
+                    <Icon name="stars" size={24} color={colors.beeYellow} />
+                    <View>
+                      <Text style={styles.matchScoreTitle}>Job Match</Text>
+                      <Text style={styles.matchScoreSubtitle}>Based on your profile</Text>
+                    </View>
+                  </View>
+                  <View style={styles.matchScoreBadge}>
+                    <Text style={styles.matchScorePercentage}>{job.matchScore}%</Text>
+                  </View>
+                </View>
+                <View style={styles.matchScoreBar}>
+                  <View style={[styles.matchScoreProgress, { width: `${job.matchScore}%` }]} />
+                </View>
+                <Text style={styles.matchScoreDescription}>
+                  {job.matchScore >= 80 ? 'Excellent match! Your skills align well with this position.' :
+                   job.matchScore >= 60 ? 'Good match. Consider applying to strengthen your profile.' :
+                   'Moderate match. You may need additional skills for this role.'}
+                </Text>
+              </View>
+            )}
+
+            {/* Salary Highlight (if available) */}
+            {job.salary && (
+              <View style={styles.salaryHighlight}>
+                <Icon name="attach-money" size={24} color={colors.success} />
+                <Text style={styles.salaryHighlightText}>{job.salary}</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Job Description - MOVED TO TOP */}
+          {job.description && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="description" size={18} color={colors.deepNavy} /> Job Description
+              </Text>
+              <View style={styles.contentCard}>
+                <Text style={styles.jobDetailsDescription}>{job.description}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Key Information Grid */}
+          <View style={styles.jobDetailsSection}>
+            <Text style={styles.jobDetailsSectionHeader}>
+              <Icon name="info" size={18} color={colors.deepNavy} /> Key Information
+            </Text>
+            <View style={styles.jobDetailsInfoSection}>
+              {job.salary && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="payments" size={24} color={colors.success} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Salary Range</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.salary}</Text>
+                  </View>
+                </View>
+              )}
+
+              {job.location && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="location-on" size={24} color={colors.danger} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Location</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.location}</Text>
+                  </View>
+                </View>
+              )}
+
+              {job.isRemote !== undefined && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="home-work" size={24} color={colors.success} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Work Model</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.isRemote ? 'Remote' : 'On-site'}</Text>
+                  </View>
+                </View>
+              )}
+              
+              <View style={styles.jobDetailsInfoCard}>
+                <View style={styles.infoCardIcon}>
+                  <Icon name="calendar-today" size={24} color={colors.softBlue} />
+                </View>
+                <View style={styles.jobDetailsInfoContent}>
+                  <Text style={styles.jobDetailsInfoLabel}>Posted Date</Text>
+                  <Text style={styles.jobDetailsInfoValue}>{formatDate(job.postedDate || job.createdAt)}</Text>
+                </View>
+              </View>
+
+              {job.deadline && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="event" size={24} color={colors.danger} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Application Deadline</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{formatDate(job.deadline)}</Text>
+                  </View>
+                </View>
+              )}
+
+              {job.jobType && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="work" size={24} color={colors.honeyGold} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Job Type</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.jobType}</Text>
+                  </View>
+                </View>
+              )}
+
+              {job.experienceLevel && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="school" size={24} color={colors.softBlue} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Experience Level</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.experienceLevel}</Text>
+                  </View>
+                </View>
+              )}
+
+              {job.education && (
+                <View style={styles.jobDetailsInfoCard}>
+                  <View style={styles.infoCardIcon}>
+                    <Icon name="school" size={24} color={colors.honeyGold} />
+                  </View>
+                  <View style={styles.jobDetailsInfoContent}>
+                    <Text style={styles.jobDetailsInfoLabel}>Education</Text>
+                    <Text style={styles.jobDetailsInfoValue}>{job.education}</Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* About the Company */}
+          {job.companyDescription && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="business" size={18} color={colors.deepNavy} /> About {job.company}
+              </Text>
+              <View style={styles.contentCard}>
+                <Text style={styles.jobDetailsDescription}>{job.companyDescription}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Requirements */}
+          {job.requirements && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="checklist" size={18} color={colors.deepNavy} /> Requirements
+              </Text>
+              <View style={styles.contentCard}>
+                <Text style={styles.jobDetailsDescription}>{job.requirements}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Responsibilities */}
+          {job.responsibilities && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="assignment" size={18} color={colors.deepNavy} /> Responsibilities
+              </Text>
+              <View style={styles.contentCard}>
+                <Text style={styles.jobDetailsDescription}>{job.responsibilities}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Benefits & Perks */}
+          {job.benefits && job.benefits.length > 0 && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="card-giftcard" size={18} color={colors.deepNavy} /> Benefits & Perks
+              </Text>
+              <View style={styles.contentCard}>
+                <View style={styles.benefitsList}>
+                  {job.benefits.map((benefit: string, index: number) => (
+                    <View key={index} style={styles.benefitItem}>
+                      <Icon name="check-circle" size={18} color={colors.success} />
+                      <Text style={styles.benefitText}>{benefit}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Required Skills */}
+          {job.requiredSkills && job.requiredSkills.length > 0 && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="emoji-objects" size={18} color={colors.deepNavy} /> Required Skills
+              </Text>
+              <View style={styles.contentCard}>
+                <View style={styles.jobTagsContainer}>
+                  {job.requiredSkills.map((skill: string, index: number) => (
+                    <View key={index} style={styles.skillTag}>
+                      <Icon name="check-circle" size={14} color={colors.success} />
+                      <Text style={styles.skillTagText}>{skill}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Nice to Have Skills */}
+          {job.preferredSkills && job.preferredSkills.length > 0 && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="star-outline" size={18} color={colors.deepNavy} /> Nice to Have
+              </Text>
+              <View style={styles.contentCard}>
+                <View style={styles.jobTagsContainer}>
+                  {job.preferredSkills.map((skill: string, index: number) => (
+                    <View key={index} style={styles.preferredSkillTag}>
+                      <Icon name="star-border" size={14} color={colors.honeyGold} />
+                      <Text style={styles.preferredSkillTagText}>{skill}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Tags */}
+          {job.tags && job.tags.length > 0 && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="local-offer" size={18} color={colors.deepNavy} /> Tags
+              </Text>
+              <View style={styles.contentCard}>
+                <View style={styles.jobTagsContainer}>
+                  {job.tags.map((tag: string, index: number) => (
+                    <View key={index} style={styles.jobTag}>
+                      <Text style={styles.jobTagText}>{tag}</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            </View>
+          )}
+
+          {/* Job Source & Activity - Merged */}
+          <View style={styles.jobDetailsSection}>
+            <Text style={styles.jobDetailsSectionHeader}>
+              <Icon name="info" size={18} color={colors.deepNavy} /> Job Source & Activity
+            </Text>
+            <View style={styles.contentCard}>
+              {/* Application Activity Stats */}
+              {(job.recentApplicants || job.viewsLast24h) && (
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8 }}>
+                    Application Activity
+                  </Text>
+                  <View style={{ gap: 8 }}>
+                    {job.recentApplicants && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.lightPeach, alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+                          <Icon name="schedule" size={16} color={colors.danger} />
+                        </View>
+                        <Text style={{ fontSize: 13, color: colors.warmGray, flex: 1 }}>
+                          <Text style={{ fontWeight: '600', color: colors.deepNavy }}>{job.recentApplicants}</Text> people applied in the last 24 hours
+                        </Text>
+                      </View>
+                    )}
+                    {job.viewsLast24h && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                        <View style={{ width: 28, height: 28, borderRadius: 14, backgroundColor: colors.lightPeach, alignItems: 'center', justifyContent: 'center', marginRight: 8 }}>
+                          <Icon name="remove-red-eye" size={16} color={colors.warmGray} />
+                        </View>
+                        <Text style={{ fontSize: 13, color: colors.warmGray, flex: 1 }}>
+                          <Text style={{ fontWeight: '600', color: colors.deepNavy }}>{job.viewsLast24h}</Text> views in the last 24 hours
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* Source Channel Info */}
+              <View style={{ borderTopWidth: (job.recentApplicants || job.viewsLast24h) ? 1 : 0, borderTopColor: colors.lightGray, paddingTop: (job.recentApplicants || job.viewsLast24h) ? 16 : 0 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 12 }}>
+                  Source Channel
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+                  {job.sourceImageUrl ? (
+                    <Image
+                      source={{ uri: job.sourceImageUrl }}
+                      style={{ width: 56, height: 56, borderRadius: 28, marginRight: 12 }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: colors.lightPeach, alignItems: 'center', justifyContent: 'center', marginRight: 12 }}>
+                      <Icon name="telegram" size={32} color="#0088cc" />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 4 }}>
+                      {job.jobSource || 'NibJobs Channel'}
+                    </Text>
+                    <Text style={{ fontSize: 13, color: colors.warmGray, marginBottom: 10 }}>
+                      This job was sourced from a Telegram channel
+                    </Text>
+                    {(job.telegramMessageUrl || job.telegramLink) && (
+                      <TouchableOpacity 
+                        style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#0088cc', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 6, alignSelf: 'flex-start' }}
+                        onPress={() => Linking.openURL(job.telegramMessageUrl || job.telegramLink)}
+                      >
+                        <Icon name="open-in-new" size={14} color={colors.white} />
+                        <Text style={{ fontSize: 13, fontWeight: '600', color: colors.white, marginLeft: 6 }}>
+                          View Original Post
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          {/* Application Process */}
+          {job.applicationProcess && (
+            <View style={styles.jobDetailsSection}>
+              <Text style={styles.jobDetailsSectionHeader}>
+                <Icon name="how-to-reg" size={18} color={colors.deepNavy} /> Application Process
+              </Text>
+              <View style={styles.contentCard}>
+                <Text style={styles.jobDetailsDescription}>{job.applicationProcess}</Text>
+              </View>
+            </View>
+          )}
+
+          {/* Apply Button Section - REMOVED FROM SCROLLVIEW, WILL BE STICKY */}
+          
+          {/* Login Prompt for Non-Authenticated Users - Moved to Bottom */}
+          {!auth.currentUser && (
+            <View style={styles.loginPromptCard}>
+              <View style={styles.loginPromptHeader}>
+                <Icon name="account-circle" size={32} color={colors.beeYellow} />
+                <Text style={styles.loginPromptTitle}>Want to do more?</Text>
+              </View>
+              <Text style={styles.loginPromptSubtitle}>Create an account or login to unlock these features:</Text>
+              
+              <View style={styles.loginPromptBenefits}>
+                <View style={styles.loginPromptBenefit}>
+                  <Icon name="bookmark" size={20} color={colors.softBlue} />
+                  <Text style={styles.loginPromptBenefitText}>Save this job for later and build your collection</Text>
+                </View>
+                
+                <View style={styles.loginPromptBenefit}>
+                  <Icon name="stars" size={20} color={colors.beeYellow} />
+                  <Text style={styles.loginPromptBenefitText}>See how well your profile matches this job</Text>
+                </View>
+                
+                <View style={styles.loginPromptBenefit}>
+                  <Icon name="notifications-active" size={20} color={colors.success} />
+                  <Text style={styles.loginPromptBenefitText}>Get notifications for jobs tailored to your skills</Text>
+                </View>
+              </View>
+              
+              <TouchableOpacity 
+                style={styles.loginPromptButton}
+                onPress={handleLogin}
+              >
+                <Text style={styles.loginPromptButtonText}>Login or Sign Up</Text>
+                <Icon name="arrow-forward" size={18} color={colors.white} />
+              </TouchableOpacity>
+            </View>
+          )}
+          
+          {/* Footer */}
+          <View style={styles.jobDetailsFooter}>
+            <View style={styles.jobFooterContent}>
+              <View style={styles.jobFooterSection}>
+                <Icon name="report-problem" size={18} color={colors.warmGray} />
+                <Text style={styles.jobFooterText}>Report this job</Text>
+              </View>
+              
+              <View style={styles.jobFooterDividerVertical} />
+              
+              <View style={styles.jobFooterSection}>
+                <Icon name="info-outline" size={18} color={colors.warmGray} />
+                <Text style={styles.jobFooterText}>Job ID: {job.id.substring(0, 8)}</Text>
+              </View>
+            </View>
+
+            <View style={styles.jobFooterBottom}>
+              <Text style={styles.jobFooterBottomText}>
+                Posted on NibJobs • {formatDate(job.createdAt)}
+              </Text>
+              <Text style={styles.jobFooterBottomText}>
+                © 2024 NibJobs - Connecting Ethiopia's Talent with Opportunities
+              </Text>
+            </View>
+
+            <View style={styles.jobFooterLinks}>
+              <TouchableOpacity>
+                <Text style={styles.footerLinkText}>Privacy Policy</Text>
+              </TouchableOpacity>
+              <Text style={styles.jobFooterLinkDivider}>•</Text>
+              <TouchableOpacity>
+                <Text style={styles.footerLinkText}>Terms of Service</Text>
+              </TouchableOpacity>
+              <Text style={styles.jobFooterLinkDivider}>•</Text>
+              <TouchableOpacity>
+                <Text style={styles.footerLinkText}>Contact Us</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </ScrollView>
+        
+        {/* Sticky Apply Button - Always Visible */}
+        <View style={styles.stickyApplyButton}>
+          <TouchableOpacity 
+            style={styles.jobDetailsApplyButton}
+            onPress={handleApply}
+          >
+            <Image 
+              source={require('./assets/telegram.svg')} 
+              style={{ width: 22, height: 22 }}
+              resizeMode="contain"
+            />
+            <Text style={styles.jobDetailsApplyButtonText}>Apply on Telegram</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+      
+      {/* Related Jobs Sidebar - MOVED TO RIGHT SIDE */}
+      <ScrollView style={styles.relatedJobsSidebar} showsVerticalScrollIndicator={false}>
+        <View style={styles.relatedJobsSidebarHeader}>
+          <Icon name="work-outline" size={20} color={colors.deepNavy} />
+          <Text style={styles.relatedJobsTitle}>Similar Jobs</Text>
+        </View>
+        
+        {relatedJobs.length > 0 ? (
+          relatedJobs.map((relatedJob: any) => (
+            <TouchableOpacity
+              key={relatedJob.id}
+              style={styles.relatedJobCard}
+              onPress={() => navigation.push('JobDetails', { id: relatedJob.id })}
+            >
+              {/* Company Logo/Icon */}
+              <View style={styles.relatedJobHeader}>
+                {relatedJob.sourceImageUrl ? (
+                  <Image
+                    source={{ uri: relatedJob.sourceImageUrl }}
+                    style={styles.relatedJobIcon}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.relatedJobIconPlaceholder}>
+                    <Icon name="business" size={16} color={colors.beeYellow} />
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.relatedJobTitle} numberOfLines={2}>{relatedJob.title}</Text>
+                  <Text style={styles.relatedJobCompany} numberOfLines={1}>{relatedJob.company}</Text>
+                </View>
+              </View>
+              
+              {/* Job Details */}
+              <View style={styles.relatedJobDetails}>
+                {relatedJob.location && (
+                  <View style={styles.relatedJobDetailItem}>
+                    <Icon name="location-on" size={14} color={colors.danger} />
+                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.location}</Text>
+                  </View>
+                )}
+                {relatedJob.contractType && (
+                  <View style={styles.relatedJobDetailItem}>
+                    <Icon name="work-outline" size={14} color={colors.softBlue} />
+                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.contractType}</Text>
+                  </View>
+                )}
+                {relatedJob.experienceLevel && (
+                  <View style={styles.relatedJobDetailItem}>
+                    <Icon name="star-outline" size={14} color={colors.honeyGold} />
+                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.experienceLevel}</Text>
+                  </View>
+                )}
+              </View>
+              
+              {/* Salary and Time */}
+              <View style={styles.relatedJobFooter}>
+                {relatedJob.salary && (
+                  <View style={styles.relatedJobSalaryBadge}>
+                    <Icon name="payments" size={12} color={colors.success} />
+                    <Text style={styles.relatedJobSalary} numberOfLines={1}>{relatedJob.salary}</Text>
+                  </View>
+                )}
+                {relatedJob.postedDate && (
+                  <Text style={styles.relatedJobTime}>{getTimeAgo(relatedJob.postedDate || relatedJob.createdAt)}</Text>
+                )}
+              </View>
+            </TouchableOpacity>
+          ))
+        ) : (
+          <View style={styles.relatedJobsEmpty}>
+            <Icon name="work-off" size={48} color={colors.lightGray} />
+            <Text style={styles.relatedJobsEmptyText}>No related jobs found</Text>
+            <Text style={styles.relatedJobsEmptySubtext}>Check back later for similar opportunities</Text>
+          </View>
+        )}
+      </ScrollView>
+      
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// Jobs Screen - For verified and active users
+function JobsScreen({ navigation }: any) {
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
+  
+  const colors = lightColors;
+
+  useEffect(() => {
+    fetchJobs();
+    fetchCategories();
+  }, []);
+
+  const fetchJobs = async () => {
+    try {
+      setLoading(true);
+      const jobsCollection = collection(db, 'jobs');
+      const jobsQuery = dbQuery(jobsCollection, orderBy('createdAt', 'desc'), limit(50));
+      const jobsSnapshot = await getDocs(jobsQuery);
+      const jobsData = jobsSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setJobs(jobsData);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      Alert.alert('Error', 'Failed to load jobs');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchCategories = async () => {
+    try {
+      const categoriesCollection = collection(db, 'categories');
+      const categoriesSnapshot = await getDocs(categoriesCollection);
+      const categoriesData = categoriesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigation.replace('Home');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  const filteredJobs = jobs.filter(job => {
+    const matchesSearch = !searchText || 
+      job.title?.toLowerCase().includes(searchText.toLowerCase()) ||
+      job.company?.toLowerCase().includes(searchText.toLowerCase()) ||
+      job.location?.toLowerCase().includes(searchText.toLowerCase());
+    
+    const matchesCategory = !selectedCategory || job.category === selectedCategory;
+    
+    return matchesSearch && matchesCategory;
+  });
+
+  const renderJobCard = ({ item: job }: any) => (
+    <TouchableOpacity 
+      style={styles.jobCard} 
+      activeOpacity={0.8}
+      onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+    >
+      <View style={styles.jobCardHeader}>
+        <View style={styles.jobIconCircle}>
+          <Icon name="work-outline" size={20} color={colors.beeYellow} />
+        </View>
+        {job.contractType && (
+          <View style={styles.jobTypeBadge}>
+            <Text style={styles.jobTypeBadgeText}>{job.contractType}</Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={styles.jobCardContent}>
+        <Text style={styles.jobTitle} numberOfLines={2}>{job.title || 'Job Title'}</Text>
+        <Text style={styles.jobCompany} numberOfLines={1}>{job.company || 'Company'}</Text>
+        
+        {job.category && (
+          <View style={styles.jobCategoryBadge}>
+            <Icon name="category" size={12} color={colors.softBlue} />
+            <Text style={styles.jobCategoryText} numberOfLines={1}>{job.category}</Text>
+          </View>
+        )}
+        
+        <View style={styles.jobMetaRow}>
+          <View style={styles.jobMetaItem}>
+            <Icon name="location-on" size={14} color={colors.warmGray} />
+            <Text style={styles.jobLocation} numberOfLines={1}>{job.location || 'Location'}</Text>
+          </View>
+          {job.isRemote && (
+            <View style={styles.remoteBadge}>
+              <Text style={styles.remoteBadgeText}>Remote</Text>
+            </View>
+          )}
+        </View>
+        
+        {job.salary && (
+          <View style={styles.jobSalaryRow}>
+            <Icon name="payments" size={14} color={colors.success} />
+            <Text style={styles.jobSalary} numberOfLines={1}>{job.salary}</Text>
+          </View>
+        )}
+      </View>
+      
+      <View style={styles.jobCardFooter}>
+        <Text style={styles.jobDate}>
+          {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
+        </Text>
+        <Icon name="arrow-forward" size={16} color={colors.beeYellow} />
+      </View>
+    </TouchableOpacity>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.jobsPageHeader}>
+        <View style={styles.jobsPageHeaderLeft}>
+          <Image source={require('./assets/favicon.png')} style={styles.headerLogoImage} />
+          <Text style={styles.jobsPageTitle}>NibJobs</Text>
+        </View>
+        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <Icon name="logout" size={20} color={colors.deepNavy} />
+          <Text style={styles.logoutButtonText}>Logout</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={styles.jobsPageContainer}>
+        {/* Search and Filters */}
+        <View style={styles.jobsPageSearchSection}>
+          <Text style={styles.jobsPageMainTitle}>Find Your Dream Job</Text>
+          
+          <View style={styles.searchContainer}>
+            <Icon name="search" size={20} color={colors.warmGray} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search jobs by title, company, or location..."
+              placeholderTextColor={colors.warmGray}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+
+          {categories.length > 0 && (
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              style={styles.categoriesScrollView}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.categoryFilterChip,
+                  !selectedCategory && styles.categoryFilterChipActive
+                ]}
+                onPress={() => setSelectedCategory('')}
+              >
+                <Text style={[
+                  styles.categoryFilterChipText,
+                  !selectedCategory && styles.categoryFilterChipTextActive
+                ]}>
+                  All
+                </Text>
+              </TouchableOpacity>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryFilterChip,
+                    selectedCategory === category.name && styles.categoryFilterChipActive
+                  ]}
+                  onPress={() => setSelectedCategory(category.name)}
+                >
+                  <Text style={[
+                    styles.categoryFilterChipText,
+                    selectedCategory === category.name && styles.categoryFilterChipTextActive
+                  ]}>
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </View>
+
+        {/* Jobs Grid */}
+        <View style={styles.jobsPageJobsSection}>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={colors.beeYellow} />
+              <Text style={styles.loadingText}>Loading jobs...</Text>
+            </View>
+          ) : filteredJobs.length === 0 ? (
+            <View style={styles.emptyStateContainer}>
+              <Icon name="work-off" size={64} color={colors.warmGray} />
+              <Text style={styles.emptyStateText}>No jobs found</Text>
+              <Text style={styles.emptyStateSubtext}>Try adjusting your filters</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={filteredJobs}
+              renderItem={renderJobCard}
+              keyExtractor={(item) => item.id}
+              numColumns={3}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.jobsGrid}
+              scrollEnabled={false}
+              columnWrapperStyle={styles.jobsGridRow}
+            />
+          )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 // Admin Panel Screen with Sidebar
-function AdminPanelScreen({ navigation }) {
-  const [activeTab, setActiveTab] = useState('dashboard');
+function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeColors }: any) {
+  const [activeTab, setActiveTab] = useState('analytics');
   const [user, setUser] = useState<any>(null);
+  const colors = themeColors || lightColors;
 
   // URL query-based routing for maintaining state on refresh
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const tabFromURL = urlParams.get('tab');
-      if (tabFromURL && ['dashboard', 'categories', 'jobs', 'telegram', 'users', 'analytics'].includes(tabFromURL)) {
+      if (tabFromURL && ['analytics', 'categories', 'jobs', 'telegram', 'users', 'subscriptions'].includes(tabFromURL)) {
         setActiveTab(tabFromURL);
       }
     }
@@ -342,33 +2443,40 @@ function AdminPanelScreen({ navigation }) {
   };
 
   const sidebarItems = [
-    { id: 'dashboard', title: 'Dashboard', icon: 'dashboard' },
+    { id: 'analytics', title: 'Analytics', icon: 'analytics' },
     { id: 'categories', title: 'Job Categories', icon: 'category' },
     { id: 'jobs', title: 'Jobs', icon: 'work' },
     { id: 'telegram', title: 'Telegram Channels', icon: 'chat' },
     { id: 'users', title: 'Users', icon: 'people' },
-    { id: 'analytics', title: 'Analytics', icon: 'analytics' }
+    { id: 'subscriptions', title: 'Subscriptions', icon: 'card-membership' }
   ];
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={styles.adminContainer}>
         {/* Sidebar */}
-        <View style={styles.sidebar}>
-          <View style={styles.sidebarHeader}>
+        <View style={[styles.sidebar, { backgroundColor: colors.sidebarBg, borderRightColor: colors.sidebarBorder }]}>
+          <View style={[styles.sidebarHeader, { borderBottomColor: colors.sidebarBorder }]}>
             <View style={styles.sidebarLogoContainer}>
               <View style={styles.logoIconContainer}>
                 <Image source={require('./assets/favicon.png')} style={styles.sidebarLogoImage} />
               </View>
-              <Text style={styles.sidebarLogo}>Admin Panel</Text>
+              <Text style={[styles.sidebarLogo, { color: colors.sidebarTextActive }]}>Admin Panel</Text>
             </View>
             <View style={styles.userContainer}>
               <View style={styles.userAvatar}>
                 <Icon name="person" size={16} color={colors.sidebarAccent} />
               </View>
-              <Text style={styles.sidebarUser}>
-                {user ? `${user.profile?.firstName || 'Admin'}` : 'Loading...'}
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.sidebarUser, { color: colors.sidebarText }]}>
+                  {user ? `${user.profile?.firstName || 'Admin'}` : 'Loading...'}
+                </Text>
+                {user && user.role && (
+                  <Text style={[styles.sidebarUserRole, { color: colors.warmGray }]}>
+                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                  </Text>
+                )}
+              </View>
             </View>
           </View>
 
@@ -377,7 +2485,7 @@ function AdminPanelScreen({ navigation }) {
               key={item.id}
               style={[
                 styles.sidebarItem,
-                activeTab === item.id && styles.sidebarItemActive
+                activeTab === item.id && { ...styles.sidebarItemActive, backgroundColor: colors.sidebarAccentLight }
               ]}
               onPress={() => handleTabChange(item.id)}
             >
@@ -393,13 +2501,39 @@ function AdminPanelScreen({ navigation }) {
               </View>
               <Text style={[
                 styles.sidebarText,
-                activeTab === item.id && styles.sidebarTextActive
+                { color: colors.sidebarText },
+                activeTab === item.id && { ...styles.sidebarTextActive, color: colors.sidebarTextActive }
               ]}>
                 {item.title}
               </Text>
               {activeTab === item.id && <View style={styles.activeIndicator} />}
             </TouchableOpacity>
           ))}
+
+          {/* Theme Switcher in Sidebar */}
+          <TouchableOpacity
+            onPress={toggleTheme}
+            style={[
+              styles.sidebarItem,
+              { 
+                marginTop: 'auto',
+                borderTopWidth: 1,
+                borderTopColor: colors.sidebarBorder,
+                paddingTop: 16
+              }
+            ]}
+          >
+            <View style={styles.iconContainer}>
+              <Icon 
+                name={isDarkMode ? 'wb-sunny' : 'nights-stay'} 
+                size={18} 
+                color={isDarkMode ? '#FCD34D' : colors.sidebarText} 
+              />
+            </View>
+            <Text style={[styles.sidebarText, { color: colors.sidebarText }]}>
+              {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
             <View style={styles.logoutIconContainer}>
@@ -410,54 +2544,24 @@ function AdminPanelScreen({ navigation }) {
         </View>
 
         {/* Main Content */}
-        <View style={styles.adminMainContent}>
-          {activeTab === 'dashboard' && <DashboardContent />}
-          {activeTab === 'categories' && <CategoriesContent />}
-          {activeTab === 'jobs' && <JobsContent />}
-          {activeTab === 'telegram' && <TelegramChannelsScreen />}
-          {activeTab === 'users' && <UsersContent />}
-          {activeTab === 'analytics' && <AnalyticsContent />}
+        <View style={[styles.adminMainContent, { backgroundColor: colors.lightGray }]}>
+          {activeTab === 'analytics' && <AnalyticsContent colors={colors} />}
+          {activeTab === 'categories' && <CategoriesContent colors={colors} />}
+          {activeTab === 'jobs' && <JobsContent colors={colors} />}
+          {activeTab === 'telegram' && <TelegramChannelsScreen colors={colors} />}
+          {activeTab === 'users' && <UsersContent colors={colors} />}
+          {activeTab === 'subscriptions' && <SubscriptionsContent colors={colors} />}
         </View>
       </View>
     </SafeAreaView>
   );
 }
 
-// Dashboard Content
-function DashboardContent() {
-  return (
-    <View style={styles.contentContainer}>
-      <Text style={styles.contentTitle}>📊 Admin Dashboard</Text>
-      
-      <View style={styles.statsContainer}>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>10</Text>
-          <Text style={styles.statLabel}>Job Categories</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>3</Text>
-          <Text style={styles.statLabel}>Total Jobs</Text>
-        </View>
-        <View style={styles.statCard}>
-          <Text style={styles.statNumber}>1</Text>
-          <Text style={styles.statLabel}>Admin Users</Text>
-        </View>
-      </View>
-      
-      <Text style={styles.welcomeText}>
-        Welcome to the NibJobs Admin Panel! 
-        Looking for the latest job opportunities? You're in the right place.
-        {'\n\n'}
-        Use the sidebar to manage job categories, jobs, and users.
-      </Text>
-    </View>
-  );
-}
-
 // Categories Content
-function CategoriesContent() {
+function CategoriesContent({ colors = lightColors }: { colors?: any }) {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   const getIconFromEmoji = (emoji: string): string => {
     const emojiIconMap: { [key: string]: string } = {
@@ -469,6 +2573,22 @@ function CategoriesContent() {
       '🌍': 'public'
     };
     return emojiIconMap[emoji] || 'category';
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    setExpandedCategories(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(categoryId)) {
+        newSet.delete(categoryId);
+      } else {
+        newSet.add(categoryId);
+      }
+      return newSet;
+    });
+  };
+
+  const getSubcategories = (parentPath: string) => {
+    return categories.filter(cat => cat.level === 1 && cat.parentPath === parentPath);
   };
 
   useEffect(() => {
@@ -525,48 +2645,93 @@ function CategoriesContent() {
   };
 
   return (
-    <View style={styles.contentContainer}>
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
       <View style={styles.contentHeader}>
         <Icon name="category" size={24} color={colors.beeYellow} />
-        <Text style={styles.contentTitle}>Job Categories Management</Text>
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Job Categories Management</Text>
       </View>
 
       {loading ? (
-        <View style={styles.loadingContainer}>
-          <Text style={styles.loadingText}>Loading categories...</Text>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.white }]}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading categories...</Text>
         </View>
       ) : (
         <View style={styles.listContainer}>
           {categories.length === 0 ? (
-            <View style={styles.emptyContainer}>
+            <View style={[styles.emptyContainer, { backgroundColor: colors.white }]}>
               <Icon name="category" size={48} color={colors.warmGray} />
-              <Text style={styles.emptyText}>No categories found</Text>
-              <Text style={styles.emptySubtext}>Categories will appear here once they are created</Text>
+              <Text style={[styles.emptyText, { color: colors.deepNavy }]}>No categories found</Text>
+              <Text style={[styles.emptySubtext, { color: colors.warmGray }]}>Categories will appear here once they are created</Text>
             </View>
           ) : (
-            categories.map((category) => (
-              <View key={category.id} style={[
-                styles.listItem,
-                category.level === 1 && styles.subcategoryItem
-              ]}>
-                <View style={styles.listIconContainer}>
-                  <Icon name={category.icon} size={24} color={category.color || colors.beeYellow} />
-                </View>
-                <View style={styles.listInfo}>
-                  <Text style={[
-                    styles.listTitle,
-                    category.level === 1 && styles.subcategoryTitle
-                  ]}>
-                    {category.level === 1 ? '  • ' : ''}{category.name}
-                  </Text>
-                  <Text style={styles.listSubtitle}>
-                    {category.jobCount || 0} jobs
-                    {category.level === 0 && ` • ${category.path}`}
-                    {category.level === 1 && ` • ${category.fullPath}`}
-                  </Text>
-                </View>
-              </View>
-            ))
+            categories
+              .filter(category => category.level === 0)
+              .map((category) => {
+                const subcategories = getSubcategories(category.path);
+                const isExpanded = expandedCategories.has(category.id);
+                const hasSubcategories = subcategories.length > 0;
+                
+                return (
+                  <View key={category.id}>
+                    <TouchableOpacity
+                      onPress={() => hasSubcategories && toggleCategory(category.id)}
+                      style={[
+                        styles.listItem,
+                        { backgroundColor: colors.white, borderColor: colors.lightGray }
+                      ]}
+                    >
+                      <View style={styles.listIconContainer}>
+                        <Icon name={category.icon} size={24} color={category.color || colors.beeYellow} />
+                      </View>
+                      <View style={styles.listInfo}>
+                        <Text style={[styles.listTitle, { color: colors.deepNavy }]}>
+                          {category.name}
+                        </Text>
+                        <Text style={[styles.listSubtitle, { color: colors.warmGray }]}>
+                          {category.jobCount || 0} jobs • {category.path}
+                          {hasSubcategories && ` • ${subcategories.length} subcategories`}
+                        </Text>
+                      </View>
+                      {hasSubcategories && (
+                        <Icon 
+                          name={isExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
+                          size={24} 
+                          color={colors.warmGray}
+                          style={{ marginLeft: 8 }}
+                        />
+                      )}
+                    </TouchableOpacity>
+                    
+                    {isExpanded && subcategories.map((subcategory) => (
+                      <View 
+                        key={subcategory.id} 
+                        style={[
+                          styles.listItem,
+                          styles.subcategoryItem,
+                          { backgroundColor: colors.white, borderColor: colors.lightGray }
+                        ]}
+                      >
+                        <View style={styles.listIconContainer}>
+                          <Icon name={subcategory.icon} size={20} color={subcategory.color || colors.warmGray} />
+                        </View>
+                        <View style={styles.listInfo}>
+                          <Text style={[
+                            styles.listTitle,
+                            styles.subcategoryTitle,
+                            { color: colors.deepNavy }
+                          ]}>
+                            {subcategory.name}
+                          </Text>
+                          <Text style={[styles.listSubtitle, { color: colors.warmGray }]}>
+                            {subcategory.jobCount || 0} jobs • {subcategory.fullPath}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                );
+              })
           )}
         </View>
       )}
@@ -590,28 +2755,83 @@ interface Job {
   tags: string[];
 }
 
-function JobsContent() {
+function JobsContent({ colors = lightColors }: { colors?: any }) {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [lastDoc, setLastDoc] = useState<any>(null);
+  const [firstDoc, setFirstDoc] = useState<any>(null);
+  const [pageSnapshots, setPageSnapshots] = useState<Map<number, any>>(new Map());
+  const jobsPerPage = 20;
 
-  const loadJobs = async () => {
+  // Get total count of jobs
+  const getTotalCount = async () => {
+    try {
+      const jobsRef = collection(db, 'jobs');
+      const snapshot = await getDocs(jobsRef);
+      setTotalJobs(snapshot.size);
+    } catch (err) {
+      console.error('Error getting total count:', err);
+    }
+  };
+
+  const loadJobs = async (page: number = 1, direction: 'next' | 'prev' | 'first' = 'first') => {
     try {
       setLoading(true);
-      console.log('📋 Loading jobs from Firestore...');
+      console.log(`📋 Loading jobs from Firestore - Page ${page}`);
       
-      // Query the jobs collection, ordered by creation date, limit to latest 50
-      const jobsQuery = query(
-        collection(db, 'jobs'),
-        orderBy('createdAt', 'desc'),
-        limit(50)
-      );
+      const jobsRef = collection(db, 'jobs');
+      let jobsQuery;
+
+      if (direction === 'first' || page === 1) {
+        // First page - no cursor
+        jobsQuery = dbQuery(
+          jobsRef,
+          orderBy('createdAt', 'desc'),
+          limit(jobsPerPage)
+        );
+      } else if (direction === 'next' && lastDoc) {
+        // Next page - start after last document
+        jobsQuery = dbQuery(
+          jobsRef,
+          orderBy('createdAt', 'desc'),
+          startAfter(lastDoc),
+          limit(jobsPerPage)
+        );
+      } else if (direction === 'prev' && pageSnapshots.has(page)) {
+        // Previous page - use cached snapshot
+        const cachedDoc = pageSnapshots.get(page);
+        jobsQuery = dbQuery(
+          jobsRef,
+          orderBy('createdAt', 'desc'),
+          startAfter(cachedDoc),
+          limit(jobsPerPage)
+        );
+      } else {
+        // Fallback to first page
+        jobsQuery = dbQuery(
+          jobsRef,
+          orderBy('createdAt', 'desc'),
+          limit(jobsPerPage)
+        );
+      }
       
       const querySnapshot = await getDocs(jobsQuery);
+      
+      if (querySnapshot.empty) {
+        setJobs([]);
+        setError('No jobs found');
+        setLoading(false);
+        return;
+      }
+
       const jobsData: Job[] = [];
       
       querySnapshot.forEach((doc) => {
-        const data = doc.data();
+        const data = doc.data() as any;
         jobsData.push({
           id: doc.id,
           title: data.title || 'No title',
@@ -628,8 +2848,20 @@ function JobsContent() {
         });
       });
       
-      console.log(`✅ Loaded ${jobsData.length} jobs from Firestore`);
+      // Cache first document of current page for previous navigation
+      const newPageSnapshots = new Map(pageSnapshots);
+      if (querySnapshot.docs.length > 0) {
+        newPageSnapshots.set(page, querySnapshot.docs[0]);
+        setPageSnapshots(newPageSnapshots);
+      }
+
+      // Store last and first documents for pagination
+      setLastDoc(querySnapshot.docs[querySnapshot.docs.length - 1]);
+      setFirstDoc(querySnapshot.docs[0]);
+      
+      console.log(`✅ Loaded ${jobsData.length} jobs from Firestore (Page ${page})`);
       setJobs(jobsData);
+      setCurrentPage(page);
       setError(null);
       
     } catch (err) {
@@ -640,156 +2872,1556 @@ function JobsContent() {
     }
   };
 
-  // Helper function to pad array to make complete rows of 4
-  const padArrayForGrid = (array: Job[]) => {
-    const paddedArray = [...array];
-    const remainder = paddedArray.length % 4;
-    if (remainder !== 0) {
-      // Add empty placeholder objects to complete the row
-      const placeholdersNeeded = 4 - remainder;
-      for (let i = 0; i < placeholdersNeeded; i++) {
-        paddedArray.push(null as any); // Add null placeholders
-      }
-    }
-    return paddedArray;
-  };
-
-  const renderJobCard = ({ item: job }: { item: Job | null }) => {
-    // If it's a placeholder (null), return an empty view
-    if (!job) {
-      return <View style={[styles.jobCard, styles.placeholderCard]} />;
-    }
-    
-    return (
-      <View style={styles.jobCard}>
-        {/* Job Icon */}
-      <View style={styles.jobIconContainer}>
-        <Icon name="work" size={20} color={colors.deepNavy} />
-      </View>        {/* Job Details */}
-        <View style={styles.jobInfo}>
-          <Text style={styles.jobTitle} numberOfLines={2}>
-            {job.title}
-          </Text>
-          <Text style={styles.jobCompany} numberOfLines={1}>
-            {job.company}
-          </Text>
-          <Text style={styles.jobCategory} numberOfLines={1}>
-            📂 {job.category}
-          </Text>
-          
-          {job.location && (
-            <Text style={styles.jobLocation} numberOfLines={1}>
-              📍 {job.location}
-            </Text>
-          )}
-          
-          {job.salary && (
-            <Text style={styles.jobSalary} numberOfLines={1}>
-              💰 {job.salary}
-            </Text>
-          )}
-          
-          {/* Badges */}
-          <View style={styles.jobBadgesContainer}>
-            <View style={[styles.jobBadge, { backgroundColor: lightColors.beeYellow }]}>
-              <Text style={styles.jobBadgeText}>{job.contractType}</Text>
-            </View>
-            {job.isRemote && (
-              <View style={[styles.jobBadge, { backgroundColor: lightColors.success }]}>
-                <Text style={[styles.jobBadgeText, { color: lightColors.white }]}>Remote</Text>
-              </View>
-            )}
-          </View>
-          
-          {/* Job Source & Date */}
-          <Text style={styles.jobSource} numberOfLines={1}>
-            📡 {job.jobSource}
-          </Text>
-          <Text style={styles.jobDate} numberOfLines={1}>
-            ⏰ {job.createdAt ? job.createdAt.toLocaleDateString() : 'Unknown date'}
-          </Text>
-        </View>
-      </View>
-    );
-  };
-
   useEffect(() => {
-    loadJobs();
+    getTotalCount();
+    loadJobs(1, 'first');
   }, []);
 
+  const goToNextPage = () => {
+    if (jobs.length === jobsPerPage) {
+      loadJobs(currentPage + 1, 'next');
+    }
+  };
+
+  const goToPrevPage = () => {
+    if (currentPage > 1) {
+      loadJobs(currentPage - 1, 'prev');
+    }
+  };
+
+  const totalPages = Math.ceil(totalJobs / jobsPerPage);
+  const startIndex = (currentPage - 1) * jobsPerPage + 1;
+  const endIndex = Math.min(currentPage * jobsPerPage, totalJobs);
+
+  // Filter jobs based on search (client-side filter on current page only)
+  const filteredJobs = jobs.filter(job => 
+    searchQuery === '' ||
+    job.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    job.company?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    job.category?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    job.location?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const formatDate = (date: Date | null | undefined) => {
+    if (!date) return 'N/A';
+    return date.toLocaleDateString();
+  };
+
   return (
-    <View style={styles.contentContainer}>
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-        <Text style={styles.contentTitle}>Jobs ({jobs.length})</Text>
-        <TouchableOpacity 
-          style={[styles.addButton, { backgroundColor: lightColors.beeYellow }]}
-          onPress={loadJobs}
-        >
-          <Text style={[styles.addButtonText, { color: lightColors.deepNavy }]}>
-            {loading ? '🔄 Loading...' : '🔄 Refresh'}
-          </Text>
-        </TouchableOpacity>
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      {/* Header */}
+      <View style={styles.usersHeader}>
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Jobs Management</Text>
+        <View style={styles.usersStats}>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Total Jobs</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.deepNavy }]}>{ totalJobs}</Text>
+          </View>
+          <TouchableOpacity 
+            style={[styles.statBadge, { backgroundColor: colors.beeYellow }]}
+            onPress={() => {
+              getTotalCount();
+              loadJobs(1, 'first');
+            }}
+          >
+            <Icon name="refresh" size={20} color="#000000" />
+            <Text style={[styles.statBadgeLabel, { color: '#000000' }]}>Refresh</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Search Bar */}
+      <View style={[styles.searchBarContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+        <Icon name="search" size={20} color={colors.warmGray} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.deepNavy }]}
+          placeholder="Search jobs on current page..."
+          placeholderTextColor={colors.warmGray}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Icon name="close" size={20} color={colors.warmGray} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {error && (
-        <View style={{ padding: 15, backgroundColor: lightColors.danger, borderRadius: 8, marginBottom: 15 }}>
-          <Text style={{ color: lightColors.white, fontWeight: 'bold' }}>❌ Error loading jobs</Text>
-          <Text style={{ color: lightColors.white }}>{error}</Text>
+        <View style={{ padding: 15, backgroundColor: colors.danger, borderRadius: 8, marginBottom: 15 }}>
+          <Text style={{ color: colors.white, fontWeight: 'bold' }}>❌ Error</Text>
+          <Text style={{ color: colors.white }}>{error}</Text>
         </View>
       )}
-      
-      {loading && jobs.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, color: lightColors.warmGray }}>📋 Loading jobs from database...</Text>
-        </View>
-      ) : jobs.length === 0 ? (
-        <View style={{ padding: 20, alignItems: 'center' }}>
-          <Text style={{ fontSize: 16, color: lightColors.warmGray }}>🔍 No jobs found</Text>
-          <Text style={{ fontSize: 14, color: lightColors.warmGray, textAlign: 'center', marginTop: 5 }}>
-            Run the Telegram scraping to populate jobs from channels
-          </Text>
+
+      {loading ? (
+        <View style={[styles.loadingContainer, { backgroundColor: colors.white }]}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading jobs...</Text>
         </View>
       ) : (
-        <FlatList
-          data={padArrayForGrid(jobs)}
-          renderItem={renderJobCard}
-          keyExtractor={(item: Job | null, index: number) => item?.id || `placeholder-${index}`}
-          numColumns={4}
-          columnWrapperStyle={styles.jobRow}
-          scrollEnabled={true}
-          showsVerticalScrollIndicator={false}
-          style={styles.jobsGrid}
-        />
+        <>
+          {/* Jobs Table */}
+          <View style={[styles.tableContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <View style={[styles.tableHeader, { backgroundColor: colors.lightGray, borderBottomColor: colors.lightGray }]}>
+              <Text style={[styles.tableHeaderCell, { flex: 2, color: colors.warmGray }]}>Title</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.5, color: colors.warmGray }]}>Company</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Category</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Location</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Type</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Source</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Posted</Text>
+            </View>
+
+            <ScrollView style={styles.tableBody}>
+              {filteredJobs.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Icon name="work-outline" size={48} color={colors.warmGray} />
+                  <Text style={[styles.emptyStateText, { color: colors.warmGray }]}>
+                    {searchQuery ? 'No jobs found matching your search' : 'No jobs available'}
+                  </Text>
+                </View>
+              ) : (
+                filteredJobs.map((job, index) => (
+                  <View 
+                    key={job.id} 
+                    style={[
+                      styles.tableRow,
+                      { borderBottomColor: colors.lightGray },
+                      index % 2 === 0 && { ...styles.tableRowEven, backgroundColor: colors.lightGray }
+                    ]}
+                  >
+                    <Text style={[styles.tableCell, { flex: 2, color: colors.deepNavy }]} numberOfLines={2}>
+                      {job.title}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 1.5, color: colors.deepNavy }]} numberOfLines={1}>
+                      {job.company}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: colors.deepNavy }]} numberOfLines={1}>
+                      {job.category}
+                    </Text>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <Text style={{ color: colors.deepNavy }} numberOfLines={1}>{job.location}</Text>
+                      {job.isRemote && (
+                        <View style={[styles.statusBadge, { marginTop: 4, backgroundColor: colors.cream }]}>
+                          <Text style={[styles.statusBadgeText, { color: colors.deepNavy }]}>Remote</Text>
+                        </View>
+                      )}
+                    </View>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <View style={[styles.roleBadge, { backgroundColor: colors.lightGray }]}>
+                        <Text style={[styles.roleBadgeText, { color: colors.deepNavy }]}>{job.contractType}</Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.tableCell, { flex: 1, color: colors.deepNavy }]} numberOfLines={1}>
+                      {job.jobSource}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 1, color: colors.deepNavy }]} numberOfLines={1}>
+                      {formatDate(job.createdAt)}
+                    </Text>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <View style={[styles.paginationContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <TouchableOpacity 
+                style={[
+                  styles.paginationButton,
+                  { backgroundColor: colors.white, borderColor: colors.lightGray },
+                  currentPage === 1 && styles.paginationButtonDisabled
+                ]}
+                onPress={goToPrevPage}
+                disabled={currentPage === 1 || loading}
+              >
+                <Icon name="chevron-left" size={20} color={colors.deepNavy} />
+              </TouchableOpacity>
+
+              <View style={styles.paginationInfo}>
+                <Text style={[styles.paginationText, { color: colors.deepNavy }]}>
+                  Page {currentPage} of {totalPages}
+                </Text>
+                <Text style={[styles.paginationSubtext, { color: colors.warmGray }]}>
+                  Showing {startIndex}-{endIndex} of {totalJobs} jobs
+                </Text>
+              </View>
+
+              <TouchableOpacity 
+                style={[
+                  styles.paginationButton,
+                  { backgroundColor: colors.white, borderColor: colors.lightGray },
+                  (currentPage === totalPages || jobs.length < jobsPerPage) && styles.paginationButtonDisabled
+                ]}
+                onPress={goToNextPage}
+                disabled={currentPage === totalPages || jobs.length < jobsPerPage || loading}
+              >
+                <Icon name="chevron-right" size={20} color={colors.deepNavy} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
       )}
     </View>
   );
 }
 
 // Users Content
-function UsersContent() {
+function UsersContent({ colors = lightColors }: { colors?: any }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+  const usersPerPage = 10;
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      setLoading(true);
+      console.log('🔍 Fetching users from Firestore...');
+      const usersRef = collection(db, 'users');
+      
+      // Try without ordering first to see if we get any users
+      const querySnapshot = await getDocs(usersRef);
+      
+      console.log('📊 Query snapshot size:', querySnapshot.size);
+      
+      const fetchedUsers: any[] = [];
+      querySnapshot.forEach((doc) => {
+        console.log('👤 User found:', doc.id, doc.data());
+        fetchedUsers.push({
+          id: doc.id,
+          ...doc.data()
+        });
+      });
+      
+      // Sort by createdAt if it exists, otherwise by email
+      fetchedUsers.sort((a, b) => {
+        if (a.createdAt && b.createdAt) {
+          return b.createdAt.seconds - a.createdAt.seconds;
+        }
+        return (a.email || '').localeCompare(b.email || '');
+      });
+      
+      console.log('✅ Total users fetched:', fetchedUsers.length);
+      setUsers(fetchedUsers);
+    } catch (error) {
+      console.error('❌ Error fetching users:', error);
+      alert('Error fetching users: ' + error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, newRole: string) => {
+    try {
+      setUpdatingUserId(userId);
+      
+      // Get current user data
+      const currentUser = users.find(u => u.id === userId);
+      if (!currentUser) return;
+      
+      const oldRole = currentUser.role || 'user';
+      const userRef = doc(db, 'users', userId);
+      
+      await updateDoc(userRef, {
+        role: newRole,
+        updatedAt: new Date()
+      });
+      
+      // Update local state
+      setUsers(users.map(user => 
+        user.id === userId ? { ...user, role: newRole } : user
+      ));
+      
+      // Send email notification
+      try {
+        const notifyRoleChange = httpsCallable(functions, 'notifyRoleChange');
+        await notifyRoleChange({
+          userEmail: currentUser.email,
+          userName: currentUser.displayName || currentUser.name || 'User',
+          oldRole: oldRole,
+          newRole: newRole
+        });
+        alert(`User role updated to ${newRole} successfully! Email notification sent.`);
+      } catch (emailError) {
+        console.error('Failed to send email notification:', emailError);
+        alert(`User role updated to ${newRole} successfully! (Email notification failed)`);
+      }
+    } catch (error) {
+      console.error('Error updating user role:', error);
+      alert('Error updating user role: ' + (error as Error).message);
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  const handleSubscriptionChange = async (userId: string, newSubscriptionId: string) => {
+    try {
+      setUpdatingUserId(userId);
+      
+      // Get current user data
+      const currentUser = users.find(u => u.id === userId);
+      if (!currentUser) return;
+      
+      const oldPlan = currentUser.subscriptionId || 'free';
+      const userRef = doc(db, 'users', userId);
+      
+      // Determine subscription end date based on plan
+      let subscriptionEndDate = null;
+      if (newSubscriptionId !== 'free') {
+        // Set end date to 1 year from now for paid plans
+        subscriptionEndDate = new Date();
+        subscriptionEndDate.setFullYear(subscriptionEndDate.getFullYear() + 1);
+      }
+      
+      await updateDoc(userRef, {
+        subscriptionId: newSubscriptionId,
+        subscriptionStatus: 'active',
+        subscriptionStartDate: new Date(),
+        subscriptionEndDate: subscriptionEndDate,
+        updatedAt: new Date()
+      });
+      
+      // Update local state
+      setUsers(users.map(user => 
+        user.id === userId ? { 
+          ...user, 
+          subscriptionId: newSubscriptionId,
+          subscriptionStatus: 'active',
+          subscriptionStartDate: new Date(),
+          subscriptionEndDate: subscriptionEndDate
+        } : user
+      ));
+      
+      // Send email notification
+      try {
+        const notifySubscriptionChange = httpsCallable(functions, 'notifySubscriptionChange');
+        await notifySubscriptionChange({
+          userEmail: currentUser.email,
+          userName: currentUser.displayName || currentUser.name || 'User',
+          oldPlan: oldPlan,
+          newPlan: newSubscriptionId
+        });
+        alert(`User subscription updated to ${newSubscriptionId} successfully! Email notification sent.`);
+      } catch (emailError) {
+        console.error('Failed to send email notification:', emailError);
+        alert(`User subscription updated to ${newSubscriptionId} successfully! (Email notification failed)`);
+      }
+    } catch (error) {
+      console.error('Error updating user subscription:', error);
+      alert('Error updating user subscription: ' + (error as Error).message);
+    } finally {
+      setUpdatingUserId(null);
+    }
+  };
+
+  // Filter users based on search
+  const filteredUsers = users.filter(user => 
+    user.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    user.role?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  // Pagination
+  const totalPages = Math.ceil(filteredUsers.length / usersPerPage);
+  const startIndex = (currentPage - 1) * usersPerPage;
+  const endIndex = startIndex + usersPerPage;
+  const currentUsers = filteredUsers.slice(startIndex, endIndex);
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= totalPages) {
+      setCurrentPage(page);
+    }
+  };
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return new Date(timestamp.seconds * 1000).toLocaleDateString();
+    } catch {
+      return 'N/A';
+    }
+  };
+
   return (
-    <View style={styles.contentContainer}>
-      <Text style={styles.contentTitle}>👥 User Management</Text>
-      <Text style={styles.comingSoon}>Coming Soon...</Text>
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.usersHeader}>
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>User Management</Text>
+        <View style={styles.usersStats}>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Total Users</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.deepNavy }]}>{users.length}</Text>
+          </View>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Active</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.deepNavy }]}>
+              {users.filter(u => u.isActive !== false).length}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Search Bar */}
+      <View style={[styles.searchBarContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+        <Icon name="search" size={20} color={colors.warmGray} />
+        <TextInput
+          style={[styles.searchInput, { color: colors.deepNavy }]}
+          placeholder="Search by email, name, or role..."
+          placeholderTextColor={colors.warmGray}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        {searchQuery.length > 0 && (
+          <TouchableOpacity onPress={() => setSearchQuery('')}>
+            <Icon name="close" size={20} color={colors.warmGray} />
+          </TouchableOpacity>
+        )}
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading users...</Text>
+        </View>
+      ) : (
+        <>
+          {/* Users Table */}
+          <View style={[styles.tableContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <View style={[styles.tableHeader, { backgroundColor: colors.lightGray, borderBottomColor: colors.lightGray }]}>
+              <Text style={[styles.tableHeaderCell, { flex: 2, color: colors.warmGray }]}>Email</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1.5, color: colors.warmGray }]}>Display Name</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Role</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Subscription</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Status</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Created</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 2, color: colors.warmGray }]}>Actions</Text>
+            </View>
+
+            <ScrollView style={styles.tableBody}>
+              {currentUsers.length === 0 ? (
+                <View style={styles.emptyState}>
+                  <Icon name="people-outline" size={48} color={colors.warmGray} />
+                  <Text style={[styles.emptyStateText, { color: colors.warmGray }]}>
+                    {searchQuery ? 'No users found matching your search' : 'No users yet'}
+                  </Text>
+                </View>
+              ) : (
+                currentUsers.map((user, index) => (
+                  <View 
+                    key={user.id} 
+                    style={[
+                      styles.tableRow,
+                      { borderBottomColor: colors.lightGray },
+                      index % 2 === 0 && { ...styles.tableRowEven, backgroundColor: colors.lightGray }
+                    ]}
+                  >
+                    <Text style={[styles.tableCell, { flex: 2, color: colors.deepNavy }]} numberOfLines={1}>
+                      {user.email || 'N/A'}
+                    </Text>
+                    <Text style={[styles.tableCell, { flex: 1.5, color: colors.deepNavy }]} numberOfLines={1}>
+                      {user.displayName || user.name || 'N/A'}
+                    </Text>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <View style={[
+                        styles.roleBadge,
+                        { 
+                          backgroundColor: user.role === 'admin' 
+                            ? (colors.isDark ? '#3B2817' : '#FEF3C7')
+                            : user.role === 'superadmin'
+                            ? (colors.isDark ? '#3F1F1F' : '#FEE2E2')
+                            : user.role === 'company'
+                            ? (colors.isDark ? '#1E3A5F' : '#DBEAFE')
+                            : colors.lightGray
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.roleBadgeText, 
+                          { 
+                            color: user.role === 'admin' 
+                              ? (colors.isDark ? '#FCD34D' : '#D97706')
+                              : user.role === 'superadmin'
+                              ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                              : user.role === 'company'
+                              ? (colors.isDark ? '#93C5FD' : '#2563EB')
+                              : colors.deepNavy
+                          }
+                        ]}>
+                          {user.role || 'user'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <View style={[
+                        styles.roleBadge,
+                        { 
+                          backgroundColor: user.subscriptionId === 'free' 
+                            ? colors.lightGray
+                            : user.subscriptionId === 'standard'
+                            ? (colors.isDark ? '#3B2817' : '#FEF3C7')
+                            : user.subscriptionId === 'enterprise'
+                            ? (colors.isDark ? '#1E3A5F' : '#DBEAFE')
+                            : colors.lightGray,
+                          borderColor: user.subscriptionId === 'free' 
+                            ? colors.warmGray
+                            : user.subscriptionId === 'standard'
+                            ? (colors.isDark ? '#F59E0B' : '#F59E0B')
+                            : user.subscriptionId === 'enterprise'
+                            ? (colors.isDark ? '#3B82F6' : '#3B82F6')
+                            : colors.warmGray
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.roleBadgeText,
+                          { 
+                            color: user.subscriptionId === 'free' 
+                              ? colors.warmGray
+                              : user.subscriptionId === 'standard'
+                              ? (colors.isDark ? '#FCD34D' : '#D97706')
+                              : user.subscriptionId === 'enterprise'
+                              ? (colors.isDark ? '#93C5FD' : '#2563EB')
+                              : colors.warmGray
+                          }
+                        ]}>
+                          {user.subscriptionId || 'free'}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      <View style={[
+                        styles.statusBadge,
+                        { 
+                          backgroundColor: user.isActive === false 
+                            ? (colors.isDark ? '#3F1F1F' : '#FEE2E2')
+                            : (colors.isDark ? '#1F3F2F' : '#D1FAE5')
+                        }
+                      ]}>
+                        <Text style={[
+                          styles.statusBadgeText,
+                          { 
+                            color: user.isActive === false 
+                              ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                              : (colors.isDark ? '#86EFAC' : '#065F46')
+                          }
+                        ]}>
+                          {user.isActive === false ? 'Inactive' : 'Active'}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.tableCell, { flex: 1, color: colors.deepNavy }]} numberOfLines={1}>
+                      {formatDate(user.createdAt)}
+                    </Text>
+                    <View style={[styles.tableCell, { flex: 2, flexDirection: 'row', alignItems: 'center', gap: 8 }]}>
+                      {updatingUserId === user.id ? (
+                        <ActivityIndicator size="small" color={colors.beeYellow} />
+                      ) : (
+                        <>
+                          <View style={styles.roleSelectContainer}>
+                            <select
+                              value={user.role || 'user'}
+                              onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: `1px solid ${colors.lightGray}`,
+                                backgroundColor: colors.white,
+                                color: colors.deepNavy,
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                width: '110px'
+                              }}
+                            >
+                              <option value="user">User</option>
+                              <option value="company">Company</option>
+                              <option value="admin">Admin</option>
+                              <option value="superadmin">Super Admin</option>
+                            </select>
+                          </View>
+                          <View style={styles.roleSelectContainer}>
+                            <select
+                              value={user.subscriptionId || 'free'}
+                              onChange={(e) => handleSubscriptionChange(user.id, e.target.value)}
+                              style={{
+                                padding: '6px 10px',
+                                borderRadius: '6px',
+                                border: `1px solid ${colors.lightGray}`,
+                                backgroundColor: colors.white,
+                                color: colors.deepNavy,
+                                fontSize: '13px',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                width: '110px'
+                              }}
+                            >
+                              <option value="free">Free</option>
+                              <option value="standard">Standard</option>
+                              <option value="enterprise">Enterprise</option>
+                            </select>
+                          </View>
+                        </>
+                      )}
+                    </View>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </View>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <View style={styles.paginationContainer}>
+              <TouchableOpacity 
+                style={[
+                  styles.paginationButton,
+                  currentPage === 1 && styles.paginationButtonDisabled
+                ]}
+                onPress={() => goToPage(currentPage - 1)}
+                disabled={currentPage === 1}
+              >
+                <Icon name="chevron-left" size={20} color={lightColors.deepNavy} />
+              </TouchableOpacity>
+
+              <View style={styles.paginationInfo}>
+                <Text style={styles.paginationText}>
+                  Page {currentPage} of {totalPages}
+                </Text>
+                <Text style={styles.paginationSubtext}>
+                  Showing {startIndex + 1}-{Math.min(endIndex, filteredUsers.length)} of {filteredUsers.length}
+                </Text>
+              </View>
+
+              <TouchableOpacity 
+                style={[
+                  styles.paginationButton,
+                  currentPage === totalPages && styles.paginationButtonDisabled
+                ]}
+                onPress={() => goToPage(currentPage + 1)}
+                disabled={currentPage === totalPages}
+              >
+                <Icon name="chevron-right" size={20} color={lightColors.deepNavy} />
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
+      )}
+    </View>
+  );
+}
+
+// Subscriptions Content
+function SubscriptionsContent({ colors = lightColors }: { colors?: any }) {
+  const [editingPlan, setEditingPlan] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'yearly'>('monthly');
+  const [saving, setSaving] = useState(false);
+  const [plans, setPlans] = useState(
+    SUBSCRIPTION_PLANS.map(plan => ({
+      ...plan,
+      priceMonthly: plan.priceMonthly,
+      priceYearly: plan.priceYearly,
+      features: plan.features.map(f => ({ name: f.text, enabled: f.enabled }))
+    }))
+  );
+
+  const handlePriceChange = (planId: string, field: 'priceMonthly' | 'priceYearly', value: string) => {
+    setPlans(plans.map(plan => 
+      plan.id === planId 
+        ? { ...plan, [field]: parseFloat(value) || 0 }
+        : plan
+    ));
+  };
+
+  const toggleFeature = (planId: string, featureIndex: number) => {
+    setPlans(plans.map(plan => {
+      if (plan.id === planId) {
+        const newFeatures = [...plan.features];
+        newFeatures[featureIndex] = {
+          ...newFeatures[featureIndex],
+          enabled: !newFeatures[featureIndex].enabled
+        };
+        return { ...plan, features: newFeatures };
+      }
+      return plan;
+    }));
+  };
+
+  const toggleAds = (planId: string) => {
+    setPlans(plans.map(plan => 
+      plan.id === planId 
+        ? { ...plan, adsEnabled: !plan.adsEnabled }
+        : plan
+    ));
+  };
+
+  const savePlanChanges = async (planId: string) => {
+    try {
+      const plan = plans.find(p => p.id === planId);
+      if (!plan) return;
+
+      const planRef = doc(db, 'subscriptionPlans', planId);
+      await setDoc(planRef, {
+        id: plan.id,
+        name: plan.name,
+        priceMonthly: plan.priceMonthly,
+        priceYearly: plan.priceYearly,
+        icon: plan.icon,
+        color: plan.color,
+        popular: plan.popular,
+        buttonText: plan.buttonText,
+        features: plan.features,
+        adsEnabled: plan.adsEnabled,
+        updatedAt: new Date().toISOString()
+      });
+      
+      alert('Plan updated successfully!');
+      setEditingPlan(null);
+    } catch (error) {
+      console.error('Error updating plan:', error);
+      alert('Error updating plan: ' + (error as Error).message);
+    }
+  };
+
+  const saveAllPlans = async () => {
+    try {
+      setSaving(true);
+      
+      // Save all plans to Firestore
+      const savePromises = plans.map(plan => {
+        const planRef = doc(db, 'subscriptionPlans', plan.id);
+        return setDoc(planRef, {
+          id: plan.id,
+          name: plan.name,
+          priceMonthly: plan.priceMonthly,
+          priceYearly: plan.priceYearly,
+          icon: plan.icon,
+          color: plan.color,
+          popular: plan.popular,
+          buttonText: plan.buttonText,
+          features: plan.features,
+          adsEnabled: plan.adsEnabled,
+          updatedAt: new Date().toISOString()
+        });
+      });
+
+      await Promise.all(savePromises);
+      alert('All subscription plans saved successfully!');
+    } catch (error) {
+      console.error('Error saving plans:', error);
+      alert('Error saving plans: ' + (error as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      {/* Header with Save Button */}
+      <View style={{ marginBottom: 32 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 24, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 4 }}>
+              Subscription Plans
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.warmGray, fontFamily: fonts.regular }}>
+              Manage pricing, features, and ad settings
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={saveAllPlans}
+            disabled={saving}
+            style={{
+              backgroundColor: saving ? colors.warmGray : '#10B981',
+              paddingHorizontal: 20,
+              paddingVertical: 12,
+              borderRadius: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              shadowColor: '#10B981',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.3,
+              shadowRadius: 4
+            }}
+          >
+            <Icon name="save" size={18} color="white" />
+            <Text style={{ 
+              color: 'white',
+              fontSize: 14,
+              fontFamily: fonts.regular,
+              letterSpacing: 0.3
+            }}>
+              {saving ? 'Saving...' : 'Save All'}
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Billing Period Toggle */}
+      <View style={{ 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        marginBottom: 40,
+        gap: 4,
+        backgroundColor: colors.lightGray,
+        borderRadius: 10,
+        padding: 4,
+        alignSelf: 'center'
+      }}>
+        <TouchableOpacity
+          onPress={() => setBillingPeriod('monthly')}
+          style={{
+            paddingHorizontal: 28,
+            paddingVertical: 10,
+            borderRadius: 8,
+            backgroundColor: billingPeriod === 'monthly' ? colors.white : 'transparent',
+            shadowColor: billingPeriod === 'monthly' ? '#000' : 'transparent',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            elevation: billingPeriod === 'monthly' ? 2 : 0
+          }}
+        >
+          <Text style={{ 
+            fontSize: 14,
+            fontFamily: fonts.regular,
+            color: billingPeriod === 'monthly' ? colors.deepNavy : colors.warmGray
+          }}>
+            Monthly
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setBillingPeriod('yearly')}
+          style={{
+            paddingHorizontal: 28,
+            paddingVertical: 10,
+            borderRadius: 8,
+            backgroundColor: billingPeriod === 'yearly' ? colors.white : 'transparent',
+            shadowColor: billingPeriod === 'yearly' ? '#000' : 'transparent',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.1,
+            shadowRadius: 2,
+            elevation: billingPeriod === 'yearly' ? 2 : 0,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 8
+          }}
+        >
+          <Text style={{ 
+            fontSize: 14,
+            fontFamily: fonts.regular,
+            color: billingPeriod === 'yearly' ? colors.deepNavy : colors.warmGray
+          }}>
+            Yearly
+          </Text>
+          <View style={{ 
+            backgroundColor: '#10B981', 
+            paddingHorizontal: 8, 
+            paddingVertical: 2, 
+            borderRadius: 6 
+          }}>
+            <Text style={{ color: 'white', fontSize: 10, fontFamily: fonts.regular }}>
+              -17%
+            </Text>
+          </View>
+        </TouchableOpacity>
+      </View>
+
+      <View style={{ 
+        flexDirection: 'row', 
+        flexWrap: 'wrap', 
+        justifyContent: 'center',
+        gap: 20
+      }}>
+        {plans.map((plan) => {
+          const currentPrice = billingPeriod === 'monthly' ? plan.priceMonthly : plan.priceYearly;
+          
+          return (
+          <View 
+            key={plan.id}
+            style={{
+              width: '31%',
+              minWidth: 280,
+              backgroundColor: colors.white,
+              borderRadius: 16,
+              padding: 24,
+              borderWidth: plan.popular ? 2 : 1,
+              borderColor: plan.popular ? plan.color : colors.lightGray,
+              position: 'relative',
+              transition: 'all 0.2s ease'
+            }}
+          >
+            {plan.popular && (
+              <View style={{
+                position: 'absolute',
+                top: -12,
+                left: 0,
+                right: 0,
+                alignItems: 'center'
+              }}>
+                <View style={{
+                  backgroundColor: plan.color,
+                  paddingHorizontal: 16,
+                  paddingVertical: 6,
+                  borderRadius: 20
+                }}>
+                  <Text style={{ 
+                    color: 'white', 
+                    fontSize: 11, 
+                    fontFamily: fonts.regular,
+                    textTransform: 'uppercase',
+                    letterSpacing: 0.5
+                  }}>
+                    Most Popular
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <View style={{ 
+              width: 48, 
+              height: 48, 
+              borderRadius: 12, 
+              backgroundColor: plan.color + '15',
+              justifyContent: 'center',
+              alignItems: 'center',
+              marginBottom: 16,
+              marginTop: plan.popular ? 8 : 0
+            }}>
+              <Icon name={plan.icon} size={24} color={plan.color} />
+            </View>
+
+            {/* Plan Name and Edit Button */}
+            <View style={{ 
+              flexDirection: 'row', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 12
+            }}>
+              <Text style={{ 
+                fontSize: 22, 
+                fontFamily: fonts.regular,
+                color: colors.deepNavy,
+                letterSpacing: -0.5
+              }}>
+                {plan.name}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setEditingPlan(editingPlan === plan.id ? null : plan.id)}
+                style={{
+                  backgroundColor: editingPlan === plan.id ? plan.color : colors.lightGray,
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 8
+                }}
+              >
+                <Text style={{ 
+                  color: editingPlan === plan.id ? 'white' : colors.deepNavy,
+                  fontSize: 13,
+                  fontFamily: fonts.regular
+                }}>
+                  {editingPlan === plan.id ? 'Cancel' : 'Edit'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {editingPlan === plan.id ? (
+              <>
+                {/* Price Editing */}
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 6, fontFamily: fonts.regular }}>
+                    Monthly Price (Br)
+                  </Text>
+                  <input
+                    type="number"
+                    value={plan.priceMonthly}
+                    onChange={(e) => handlePriceChange(plan.id, 'priceMonthly', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: 10,
+                      fontSize: 14,
+                      borderRadius: 8,
+                      border: `2px solid ${plan.color}30`,
+                      fontFamily: fonts.regular,
+                      backgroundColor: colors.white,
+                      color: colors.deepNavy,
+                      outline: 'none'
+                    }}
+                  />
+                </View>
+                <View style={{ marginBottom: 14 }}>
+                  <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 6, fontFamily: fonts.regular }}>
+                    Yearly Price (Br)
+                  </Text>
+                  <input
+                    type="number"
+                    value={plan.priceYearly}
+                    onChange={(e) => handlePriceChange(plan.id, 'priceYearly', e.target.value)}
+                    style={{
+                      width: '100%',
+                      padding: 10,
+                      fontSize: 14,
+                      borderRadius: 8,
+                      border: `2px solid ${plan.color}30`,
+                      fontFamily: fonts.regular,
+                      backgroundColor: colors.white,
+                      color: colors.deepNavy,
+                      outline: 'none'
+                    }}
+                  />
+                </View>
+
+                {/* Enable Ads Toggle */}
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  backgroundColor: colors.lightGray,
+                  padding: 12,
+                  borderRadius: 10,
+                  marginBottom: 14
+                }}>
+                  <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.deepNavy }}>
+                    Enable Ads
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => toggleAds(plan.id)}
+                    style={{
+                      width: 44,
+                      height: 24,
+                      borderRadius: 12,
+                      backgroundColor: plan.adsEnabled ? '#EF4444' : '#10B981',
+                      padding: 2,
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <View style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      backgroundColor: 'white',
+                      alignSelf: plan.adsEnabled ? 'flex-end' : 'flex-start',
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 1 },
+                      shadowOpacity: 0.2,
+                      shadowRadius: 2
+                    }} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : (
+              <>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', marginBottom: 4 }}>
+                  <Text style={{ 
+                    fontSize: 32, 
+                    fontFamily: fonts.regular,
+                    color: plan.color,
+                    letterSpacing: -1
+                  }}>
+                    {currentPrice === 0 ? 'Free' : `${currentPrice} Br`}
+                  </Text>
+                  {currentPrice > 0 && (
+                    <Text style={{ 
+                      fontSize: 15, 
+                      fontFamily: fonts.regular,
+                      color: '#9CA3AF',
+                      marginLeft: 6
+                    }}>
+                      / {billingPeriod === 'monthly' ? 'month' : 'year'}
+                    </Text>
+                  )}
+                </View>
+
+                {/* Ads Status Badge */}
+                <View style={{
+                  backgroundColor: plan.adsEnabled ? '#FEF2F2' : '#F0FDF4',
+                  paddingHorizontal: 10,
+                  paddingVertical: 5,
+                  borderRadius: 12,
+                  alignSelf: 'flex-start',
+                  marginBottom: 12,
+                  marginTop: 8,
+                  borderWidth: 1,
+                  borderColor: plan.adsEnabled ? '#FEE2E2' : '#DCFCE7'
+                }}>
+                  <Text style={{
+                    fontSize: 11,
+                    fontFamily: fonts.regular,
+                    color: plan.adsEnabled ? '#EF4444' : '#10B981',
+                    letterSpacing: 0.3
+                  }}>
+                    {plan.adsEnabled ? 'ADS ENABLED' : 'AD-FREE'}
+                  </Text>
+                </View>
+              </>
+            )}
+
+            <View style={{ 
+              height: 1, 
+              backgroundColor: '#E5E7EB', 
+              marginVertical: 16 
+            }} />
+
+            {/* Features List with Toggle */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ 
+                fontSize: 13, 
+                fontFamily: fonts.regular,
+                color: '#111',
+                marginBottom: 12,
+                letterSpacing: 0.3
+              }}>
+                FEATURES
+              </Text>
+              {plan.features.map((feature, index) => (
+                <View 
+                  key={index}
+                  style={{ 
+                    flexDirection: 'row', 
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    marginBottom: 10,
+                    backgroundColor: editingPlan === plan.id ? colors.lightGray : 'transparent',
+                    padding: editingPlan === plan.id ? 8 : 0,
+                    borderRadius: 8
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', flex: 1 }}>
+                    <Text style={{ 
+                      color: feature.enabled ? plan.color : colors.warmGray, 
+                      marginRight: 10,
+                      fontSize: 16,
+                      lineHeight: 20
+                    }}>
+                      {feature.enabled ? '✓' : '○'}
+                    </Text>
+                    <Text style={{ 
+                      flex: 1,
+                      fontSize: 13, 
+                      fontFamily: fonts.regular,
+                      color: feature.enabled ? colors.deepNavy : colors.warmGray,
+                      lineHeight: 20,
+                      textDecorationLine: feature.enabled ? 'none' : 'line-through'
+                    }}>
+                      {feature.name}
+                    </Text>
+                  </View>
+                  
+                  {editingPlan === plan.id && (
+                    <TouchableOpacity
+                      onPress={() => toggleFeature(plan.id, index)}
+                      style={{
+                        width: 40,
+                        height: 22,
+                        borderRadius: 11,
+                        backgroundColor: feature.enabled ? plan.color : colors.warmGray,
+                        padding: 2,
+                        justifyContent: 'center',
+                        marginLeft: 8
+                      }}
+                    >
+                      <View style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: 'white',
+                        alignSelf: feature.enabled ? 'flex-end' : 'flex-start',
+                        shadowColor: '#000',
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.2,
+                        shadowRadius: 2
+                      }} />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              ))}
+            </View>
+
+            {editingPlan === plan.id ? (
+              <TouchableOpacity
+                onPress={() => savePlanChanges(plan.id)}
+                style={{
+                  backgroundColor: plan.color,
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  marginTop: 4,
+                  shadowColor: plan.color,
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 4
+                }}
+              >
+                <Text style={{ 
+                  color: 'white',
+                  fontSize: 14,
+                  fontFamily: fonts.regular,
+                  letterSpacing: 0.3
+                }}>
+                  Save Changes
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                style={{
+                  backgroundColor: 'white',
+                  borderWidth: 2,
+                  borderColor: plan.color,
+                  borderRadius: 10,
+                  paddingVertical: 12,
+                  alignItems: 'center',
+                  marginTop: 4,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4
+                }}
+              >
+                <Text style={{ 
+                  color: '#000000',
+                  fontSize: 14,
+                  fontFamily: fonts.regular,
+                  letterSpacing: 0.3
+                }}>
+                  {plan.buttonText}
+                </Text>
+              </TouchableOpacity>
+            )}
+          </View>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 // Analytics Content
-function AnalyticsContent() {
-  return (
-    <View style={styles.contentContainer}>
-      <Text style={styles.contentTitle}>📈 Analytics</Text>
-      <Text style={styles.comingSoon}>Coming Soon...</Text>
+// Analytics Content
+function AnalyticsContent({ colors = lightColors }: { colors?: any }) {
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    totalJobs: 0,
+    totalCompanies: 0,
+    totalChannels: 0,
+    activeChannels: 0,
+    activeUsers: 0,
+    verifiedUsers: 0,
+    jobsThisMonth: 0,
+    subscriptions: {
+      free: 0,
+      standard: 0,
+      enterprise: 0
+    },
+    usersByRole: {
+      user: 0,
+      company: 0,
+      admin: 0,
+      superadmin: 0
+    }
+  });
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, []);
+
+  const fetchAnalytics = async () => {
+    try {
+      setLoading(true);
+      
+      // Fetch all collections in parallel
+      const [usersSnapshot, jobsSnapshot, channelsSnapshot] = await Promise.all([
+        getDocs(collection(db, 'users')),
+        getDocs(collection(db, 'jobs')),
+        getDocs(collection(db, 'telegramChannels'))
+      ]);
+
+      // Calculate user stats
+      const users = usersSnapshot.docs.map(doc => doc.data());
+      const activeUsers = users.filter(u => u.isActive !== false).length;
+      const verifiedUsers = users.filter(u => u.isVerified === true).length;
+      
+      // Count by role
+      const usersByRole = {
+        user: users.filter(u => u.role === 'user' || !u.role).length,
+        company: users.filter(u => u.role === 'company').length,
+        admin: users.filter(u => u.role === 'admin').length,
+        superadmin: users.filter(u => u.role === 'superadmin').length
+      };
+
+      // Count by subscription
+      const subscriptions = {
+        free: users.filter(u => !u.subscriptionId || u.subscriptionId === 'free').length,
+        standard: users.filter(u => u.subscriptionId === 'standard').length,
+        enterprise: users.filter(u => u.subscriptionId === 'enterprise').length
+      };
+
+      // Calculate job stats
+      const jobs = jobsSnapshot.docs.map(doc => doc.data());
+      const uniqueCompanies = new Set(jobs.map(j => j.company).filter(c => c)).size;
+      
+      // Jobs this month
+      const startOfMonth = new Date();
+      startOfMonth.setDate(1);
+      startOfMonth.setHours(0, 0, 0, 0);
+      const jobsThisMonth = jobs.filter(j => {
+        const jobDate = j.postedDate?.toDate?.() || new Date(j.postedDate);
+        return jobDate >= startOfMonth;
+      }).length;
+
+      // Calculate channel stats
+      const channels = channelsSnapshot.docs.map(doc => doc.data());
+      const activeChannels = channels.filter(c => c.isActive && c.scrapingEnabled).length;
+
+      setStats({
+        totalUsers: usersSnapshot.size,
+        totalJobs: jobsSnapshot.size,
+        totalCompanies: uniqueCompanies,
+        totalChannels: channelsSnapshot.size,
+        activeChannels,
+        activeUsers,
+        verifiedUsers,
+        jobsThisMonth,
+        subscriptions,
+        usersByRole
+      });
+    } catch (error) {
+      console.error('Error fetching analytics:', error);
+      alert('Error loading analytics data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const StatCard = ({ icon, title, value, subtitle, color: cardColor }: any) => (
+    <View style={{
+      flex: 1,
+      minWidth: 250,
+      backgroundColor: colors.white,
+      borderRadius: 16,
+      padding: 24,
+      marginBottom: 20,
+      marginRight: 20,
+      borderWidth: 1,
+      borderColor: colors.lightGray,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.05,
+      shadowRadius: 8
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+        <View style={{
+          width: 48,
+          height: 48,
+          borderRadius: 12,
+          backgroundColor: cardColor + '20',
+          justifyContent: 'center',
+          alignItems: 'center',
+          marginRight: 12
+        }}>
+          <Icon name={icon} size={24} color={cardColor} />
+        </View>
+        <Text style={{ fontSize: 14, fontFamily: fonts.regular, color: colors.warmGray }}>
+          {title}
+        </Text>
+      </View>
+      <Text style={{ fontSize: 36, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 4 }}>
+        {value.toLocaleString()}
+      </Text>
+      {subtitle && (
+        <Text style={{ fontSize: 13, fontFamily: fonts.regular, color: colors.warmGray }}>
+          {subtitle}
+        </Text>
+      )}
     </View>
+  );
+
+  if (loading) {
+    return (
+      <View style={[styles.contentContainer, { justifyContent: 'center', alignItems: 'center', backgroundColor: colors.lightGray }]}>
+        <ActivityIndicator size="large" color={colors.beeYellow} />
+        <Text style={{ marginTop: 16, fontSize: 16, color: colors.warmGray, fontFamily: fonts.regular }}>
+          Loading analytics...
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      {/* Header */}
+      <View style={{ marginBottom: 32 }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+          <View>
+            <Text style={{ fontSize: 24, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 4 }}>
+              Analytics
+            </Text>
+            <Text style={{ fontSize: 14, color: colors.warmGray, fontFamily: fonts.regular }}>
+              Overview of your platform's key metrics
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={fetchAnalytics}
+            style={{
+              backgroundColor: colors.beeYellow,
+              paddingHorizontal: 20,
+              paddingVertical: 12,
+              borderRadius: 10,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8
+            }}
+          >
+            <Icon name="refresh" size={18} color="#000000" />
+            <Text style={{ color: '#000000', fontSize: 14, fontFamily: fonts.regular }}>
+              Refresh
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Main Stats */}
+      <Text style={{ fontSize: 18, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 16 }}>
+        Overview
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 32 }}>
+        <StatCard
+          icon="people"
+          title="Total Users"
+          value={stats.totalUsers}
+          subtitle={`${stats.activeUsers} active, ${stats.verifiedUsers} verified`}
+          color="#3B82F6"
+        />
+        <StatCard
+          icon="work"
+          title="Total Jobs"
+          value={stats.totalJobs}
+          subtitle={`${stats.jobsThisMonth} posted this month`}
+          color="#10B981"
+        />
+        <StatCard
+          icon="business"
+          title="Companies"
+          value={stats.totalCompanies}
+          subtitle="Unique companies posting"
+          color="#F59E0B"
+        />
+        <StatCard
+          icon="rss-feed"
+          title="Telegram Channels"
+          value={stats.totalChannels}
+          subtitle={`${stats.activeChannels} active & scraping`}
+          color="#8B5CF6"
+        />
+      </View>
+
+      {/* Users by Role */}
+      <Text style={{ fontSize: 18, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 16 }}>
+        Users by Role
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 32 }}>
+        <StatCard
+          icon="person"
+          title="Regular Users"
+          value={stats.usersByRole.user}
+          color="#6B7280"
+        />
+        <StatCard
+          icon="business-center"
+          title="Companies"
+          value={stats.usersByRole.company}
+          color="#F59E0B"
+        />
+        <StatCard
+          icon="admin-panel-settings"
+          title="Admins"
+          value={stats.usersByRole.admin}
+          color="#EF4444"
+        />
+        <StatCard
+          icon="verified-user"
+          title="Super Admins"
+          value={stats.usersByRole.superadmin}
+          color="#8B5CF6"
+        />
+      </View>
+
+      {/* Subscriptions */}
+      <Text style={{ fontSize: 18, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 16 }}>
+        Subscription Plans
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', marginBottom: 32 }}>
+        <StatCard
+          icon="star-outline"
+          title="Free Plan"
+          value={stats.subscriptions.free}
+          subtitle={`${((stats.subscriptions.free / stats.totalUsers) * 100).toFixed(1)}% of users`}
+          color="#808080"
+        />
+        <StatCard
+          icon="star"
+          title="Standard Plan"
+          value={stats.subscriptions.standard}
+          subtitle={`${((stats.subscriptions.standard / stats.totalUsers) * 100).toFixed(1)}% of users`}
+          color="#F4C430"
+        />
+        <StatCard
+          icon="business"
+          title="Enterprise Plan"
+          value={stats.subscriptions.enterprise}
+          subtitle={`${((stats.subscriptions.enterprise / stats.totalUsers) * 100).toFixed(1)}% of users`}
+          color="#1A365D"
+        />
+      </View>
+    </ScrollView>
   );
 }
 
 // Navigation Setup
 const Stack = createNativeStackNavigator();
 
+// Theme Switcher Component
+function ThemeSwitcher({ isDarkMode, onToggle }: { isDarkMode: boolean; onToggle: () => void }) {
+  return (
+    <TouchableOpacity
+      onPress={onToggle}
+      style={{
+        position: 'absolute',
+        top: 20,
+        right: 20,
+        zIndex: 1000,
+        backgroundColor: isDarkMode ? '#374151' : '#FFFFFF',
+        borderRadius: 25,
+        width: 50,
+        height: 50,
+        justifyContent: 'center',
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: isDarkMode ? 0.4 : 0.15,
+        shadowRadius: 8,
+        elevation: 5,
+        borderWidth: 1,
+        borderColor: isDarkMode ? '#4B5563' : '#E5E7EB'
+      }}
+    >
+      <Icon
+        name={isDarkMode ? 'wb-sunny' : 'nights-stay'}
+        size={24}
+        color={isDarkMode ? '#FCD34D' : '#F59E0B'}
+      />
+    </TouchableOpacity>
+  );
+}
+
 // Home Screen Component
-function HomeScreen({ navigation }) {
+function HomeScreen({ navigation }: any) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [allJobs, setAllJobs] = useState<any[]>([]);
   const [filteredJobs, setFilteredJobs] = useState<any[]>([]);
@@ -888,6 +4520,7 @@ function HomeScreen({ navigation }) {
       ...styles.jobCard,
       backgroundColor: colors.white,
       borderColor: colors.lightGray,
+      maxWidth: isMobile ? '100%' : '32%',
     },
     // Filter sidebar styles
     filterSidebar: {
@@ -961,8 +4594,13 @@ function HomeScreen({ navigation }) {
     // Modern Header Dynamic Styles
     modernHeader: {
       backgroundColor: colors.white,
-      borderBottomWidth: 1,
-      borderBottomColor: colors.lightGray,
+      borderBottomWidth: 2,
+      borderBottomColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: isDarkMode ? 0.3 : 0.1,
+      shadowRadius: 8,
+      elevation: 4,
     },
     modernBrandText: {
       fontSize: 20,
@@ -1144,7 +4782,7 @@ function HomeScreen({ navigation }) {
 
   useEffect(() => {
     filterJobs();
-  }, [allJobs, searchText, selectedCategory, selectedContractType, selectedLocation, isRemote]);
+  }, [allJobs, searchText, selectedCategory, selectedContractType, isRemote]);
 
   // Auto-scroll effect for infinite channel scroll
   useEffect(() => {
@@ -1206,17 +4844,6 @@ function HomeScreen({ navigation }) {
       filtered = filtered.filter(job => job.contractType === selectedContractType);
     }
 
-    // Location filter
-    if (selectedLocation) {
-      if (selectedLocation === 'Remote') {
-        filtered = filtered.filter(job => job.isRemote === true);
-      } else {
-        filtered = filtered.filter(job => 
-          (job.location || '').toLowerCase().includes(selectedLocation.toLowerCase())
-        );
-      }
-    }
-
     // Remote filter
     if (isRemote) {
       filtered = filtered.filter(job => job.isRemote === true);
@@ -1228,15 +4855,15 @@ function HomeScreen({ navigation }) {
 
   const fetchJobs = async () => {
     try {
-      const jobsQuery = query(
+      const jobsQuery = dbQuery(
         collection(db, 'jobs'),
         orderBy('createdAt', 'desc'),
-        limit(50)
+        limit(9)
       );
       const jobsSnapshot = await getDocs(jobsQuery);
       const fetchedJobs = jobsSnapshot.docs.map(doc => ({
         id: doc.id,
-        ...doc.data()
+        ...doc.data() as any
       }));
       setAllJobs(fetchedJobs);
       setJobs(fetchedJobs);
@@ -1250,18 +4877,26 @@ function HomeScreen({ navigation }) {
 
   const fetchTelegramChannels = async () => {
     try {
-      const channelsQuery = query(
-        collection(db, 'telegramChannels')
-        // Removed limit to show all telegram channels
-      );
-      const channelsSnapshot = await getDocs(channelsQuery);
-      const fetchedChannels = channelsSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
+      // Using local embedded images instead of Firebase
+      const fetchedChannels = [
+        { id: '1', name: 'Addis Ababa Jobs', imageUrl: require('./assets/channels/addis_ababa_jobs.jpg') },
+        { id: '2', name: 'Addis Jobs', imageUrl: require('./assets/channels/addis_jobs.jpg') },
+        { id: '3', name: 'Afriwork', imageUrl: require('./assets/channels/afriwork.jpg') },
+        { id: '4', name: 'Dagmawi Babl Jobs', imageUrl: require('./assets/channels/dagmawi_babl_jobs.jpg') },
+        { id: '5', name: 'Effoy Jobs', imageUrl: require('./assets/channels/effoy_jobs.jpg') },
+        { id: '6', name: 'Ethio Jobs Vacancy', imageUrl: require('./assets/channels/ethio_jobs_vacancy.jpg') },
+        { id: '7', name: 'Ethio Jobs', imageUrl: require('./assets/channels/ethio_jobs.jpg') },
+        { id: '8', name: 'Ethiopian Vacancy', imageUrl: require('./assets/channels/ethiopian_vacancy.jpg') },
+        { id: '9', name: 'Fana Jobs', imageUrl: require('./assets/channels/fana_jobs.jpg') },
+        { id: '10', name: 'Fana Online Jobs', imageUrl: require('./assets/channels/fana_online_jobs.jpg') },
+        { id: '11', name: 'Hahu Jobs', imageUrl: require('./assets/channels/hahu_jobs.jpg') },
+        { id: '12', name: 'Harmee Jobs', imageUrl: require('./assets/channels/harmee_jobs.jpg') },
+        { id: '13', name: 'Josad Software Jobs', imageUrl: require('./assets/channels/josad_software_jobs.jpg') },
+        { id: '14', name: 'Tikus Jobs', imageUrl: require('./assets/channels/tikus_jobs.jpg') },
+      ];
       setTelegramChannels(fetchedChannels);
     } catch (error) {
-      console.error('Error fetching telegram channels:', error);
+      console.error('Error loading telegram channels:', error);
     }
   };
 
@@ -1323,23 +4958,29 @@ function HomeScreen({ navigation }) {
   };
 
   const renderJobCard = ({ item: job }: any) => (
-    <TouchableOpacity style={dynamicStyles.jobCard} activeOpacity={0.8}>
-      <View style={styles.jobCardHeader}>
-        <View style={styles.jobIconCircle}>
-          <Icon name="work-outline" size={20} color={colors.beeYellow} />
+    <TouchableOpacity 
+      style={dynamicStyles.jobCard} 
+      activeOpacity={0.85}
+      onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+    >
+      {/* Header with company badge */}
+      <View style={styles.jobCardSimpleHeader}>
+        <View style={styles.jobCompanyBadge}>
+          <Icon name="business" size={16} color={colors.softBlue} />
         </View>
-        {job.contractType && (
-          <View style={styles.jobTypeBadge}>
-            <Text style={styles.jobTypeBadgeText}>{job.contractType}</Text>
+        {job.isRemote && (
+          <View style={styles.remoteTag}>
+            <Text style={styles.remoteTagText}>Remote</Text>
           </View>
         )}
       </View>
       
-      <View style={styles.jobCardContent}>
+      {/* Job Info */}
+      <View style={styles.jobCardBody}>
         <Text style={dynamicStyles.jobTitle} numberOfLines={2}>{job.title || 'Job Title'}</Text>
         <Text style={dynamicStyles.jobCompany} numberOfLines={1}>{job.company || 'Company'}</Text>
         
-        <View style={styles.jobMetaRow}>
+        <View style={styles.jobMetaContainer}>
           <View style={styles.jobMetaItem}>
             <Icon name="location-on" size={14} color={colors.warmGray} />
             <Text style={dynamicStyles.jobLocation} numberOfLines={1}>{job.location || 'Location'}</Text>
@@ -1347,14 +4988,15 @@ function HomeScreen({ navigation }) {
         </View>
         
         {job.salary && (
-          <View style={styles.jobSalaryRow}>
+          <View style={styles.jobSalaryContainer}>
             <Icon name="payments" size={14} color={colors.success} />
             <Text style={dynamicStyles.jobSalary} numberOfLines={1}>{job.salary}</Text>
           </View>
         )}
       </View>
       
-      <View style={styles.jobCardFooter}>
+      {/* Footer */}
+      <View style={styles.jobCardSimpleFooter}>
         <Text style={dynamicStyles.jobDate}>
           {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
         </Text>
@@ -1368,7 +5010,7 @@ function HomeScreen({ navigation }) {
       <View style={styles.channelAvatarContainer}>
         {channel.imageUrl ? (
           <Image
-            source={{ uri: channel.imageUrl }}
+            source={channel.imageUrl}
             style={styles.channelAvatar}
             resizeMode="cover"
           />
@@ -1418,7 +5060,6 @@ function HomeScreen({ navigation }) {
               <View style={styles.modernLogoBadge}>
                 <Image source={require('./assets/favicon.png')} style={styles.modernLogo} />
               </View>
-              <Text style={dynamicStyles.modernBrandText}>NibJobs</Text>
             </TouchableOpacity>
             
             {!isMobile && (
@@ -1436,14 +5077,6 @@ function HomeScreen({ navigation }) {
           {/* Right Actions */}
           <View style={styles.modernHeaderRight}>
             <View style={styles.modernQuickActions}>
-              <TouchableOpacity style={styles.modernIconButton} onPress={toggleTheme}>
-                <Icon 
-                  name={isDarkMode ? "wb-sunny" : "nightlight-round"} 
-                  size={20} 
-                  color={colors.deepNavy} 
-                />
-              </TouchableOpacity>
-              
               <TouchableOpacity 
                 ref={languageButtonRef}
                 style={styles.modernLanguageButton} 
@@ -1461,14 +5094,20 @@ function HomeScreen({ navigation }) {
             {!isMobile && (
               <View style={styles.modernDownloadButtons}>
                 <TouchableOpacity onPress={handleGooglePlayDownload}>
-                  <Image source={require('./assets/getit_on_googleplay.svg')} style={styles.modernDownloadButton} />
+                  <Image source={require('./assets/google_play.png')} style={styles.modernDownloadButton} />
                 </TouchableOpacity>
               </View>
             )}
             
-            <TouchableOpacity style={styles.modernPrimaryButton} onPress={handleLogin}>
-              <Icon name="person" size={18} color={colors.white} />
-              <Text style={styles.modernPrimaryButtonText}>{t.login}</Text>
+            {!isMobile && (
+              <TouchableOpacity style={styles.modernSecondaryButton} onPress={handleLogin}>
+                <Text style={styles.modernSecondaryButtonText}>{t.login}</Text>
+              </TouchableOpacity>
+            )}
+            
+            <TouchableOpacity style={styles.modernPrimaryButton} onPress={() => navigation.navigate('Signup')}>
+              <Icon name="person-add" size={18} color={colors.white} />
+              <Text style={styles.modernPrimaryButtonText}>{t.signUp}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -1493,6 +5132,65 @@ function HomeScreen({ navigation }) {
             </View>
             
             <View style={styles.mobileMenuContent}>
+              {/* Login and Signup Buttons */}
+              <View style={{ paddingHorizontal: 20, paddingVertical: 8 }}>
+                <TouchableOpacity 
+                  style={{
+                    backgroundColor: colors.beeYellow,
+                    paddingVertical: 14,
+                    paddingHorizontal: 20,
+                    borderRadius: 12,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    marginBottom: 12,
+                  }}
+                  onPress={handleLogin}
+                >
+                  <Icon name="login" size={20} color={colors.deepNavy} />
+                  <Text style={{ 
+                    fontSize: 16, 
+                    fontWeight: '600', 
+                    color: colors.deepNavy,
+                    fontFamily: 'Inter-SemiBold'
+                  }}>
+                    {t.login}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity 
+                  style={{
+                    backgroundColor: 'transparent',
+                    paddingVertical: 14,
+                    paddingHorizontal: 20,
+                    borderRadius: 12,
+                    borderWidth: 2,
+                    borderColor: colors.beeYellow,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                  }}
+                  onPress={() => {
+                    setIsMobileMenuOpen(false);
+                    navigation.navigate('Signup');
+                  }}
+                >
+                  <Icon name="person-add" size={20} color={colors.beeYellow} />
+                  <Text style={{ 
+                    fontSize: 16, 
+                    fontWeight: '600', 
+                    color: colors.beeYellow,
+                    fontFamily: 'Inter-SemiBold'
+                  }}>
+                    {t.signUp}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.mobileMenuDivider} />
+
               <TouchableOpacity style={styles.mobileMenuItem}>
                 <Icon name="work" size={20} color={colors.beeYellow} />
                 <Text style={dynamicStyles.mobileMenuItemText}>Jobs</Text>
@@ -1513,7 +5211,7 @@ function HomeScreen({ navigation }) {
               <View style={styles.mobileMenuDownloads}>
                 <Text style={dynamicStyles.mobileMenuSectionTitle}>Download App</Text>
                 <TouchableOpacity onPress={handleGooglePlayDownload} style={styles.mobileMenuDownloadItem}>
-                  <Image source={require('./assets/getit_on_googleplay.svg')} style={styles.mobileDownloadButton} />
+                  <Image source={require('./assets/google_play.png')} style={styles.mobileDownloadButton} />
                 </TouchableOpacity>
               </View>
             </View>
@@ -1582,21 +5280,10 @@ function HomeScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
                 
-                {/* Google Play Download Button */}
-                <TouchableOpacity 
-                  onPress={handleGooglePlayDownload} 
-                  activeOpacity={0.8}
-                >
-                  <Image 
-                    source={require('./assets/getit_on_googleplay.svg')} 
-                    style={styles.heroDownloadImage} 
-                  />
-                </TouchableOpacity>
-                
                 {/* Quick Stats */}
                 <View style={styles.heroStats}>
                   <View style={styles.heroStat}>
-                    <Text style={dynamicStyles.heroStatNumber}>{jobs.length}+</Text>
+                    <Text style={dynamicStyles.heroStatNumber}>1000+</Text>
                     <Text style={dynamicStyles.heroStatLabel}>Jobs Available</Text>
                   </View>
                   <View style={styles.heroStat}>
@@ -1608,6 +5295,27 @@ function HomeScreen({ navigation }) {
                     <Text style={dynamicStyles.heroStatLabel}>Companies</Text>
                   </View>
                 </View>
+                
+                {/* Download App Button */}
+                <TouchableOpacity 
+                  onPress={handleGooglePlayDownload} 
+                  activeOpacity={0.8}
+                  style={{ 
+                    marginTop: 24,
+                    alignSelf: 'flex-start',
+                    padding: 0,
+                  }}
+                >
+                  <Image 
+                    source={require('./assets/google_play.png')} 
+                    style={{
+                      height: isMobile ? 72 : 66,
+                      width: isMobile ? 216 : 198,
+                      resizeMode: 'cover',
+                      alignSelf: 'flex-start',
+                    }} 
+                  />
+                </TouchableOpacity>
               </View>
               
               {!isMobile && (
@@ -1623,29 +5331,31 @@ function HomeScreen({ navigation }) {
           </View>
 
           {/* Telegram Channels Horizontal Scroll */}
-          <View style={dynamicStyles.channelsSection}>
-            <View style={styles.sectionHeader}>
-              <Text style={dynamicStyles.sectionTitle}>{t.exploreChannels}</Text>
-              <Text style={dynamicStyles.sectionSubtitle}>
-                Join thousands of job seekers on Telegram
-              </Text>
-            </View>
-            <View style={styles.channelsContainer}>
-              <ScrollView 
-                ref={channelScrollViewRef}
-                horizontal 
-                showsHorizontalScrollIndicator={false} 
-                style={styles.channelsScroll}
-                contentContainerStyle={styles.channelsScrollContainer}
-                scrollEventThrottle={16}
-              >
-                {/* Duplicate channels for infinite scroll effect */}
-                {[...telegramChannels, ...telegramChannels].map((channel, index) => (
-                  <View key={`${channel.id || 'ch'}-${index}`} style={styles.channelCardWrapper}>
-                    {renderChannelCard({ item: channel })}
-                  </View>
-                ))}
-              </ScrollView>
+          <View style={styles.channelsSectionWrapper}>
+            <View style={dynamicStyles.channelsSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={dynamicStyles.sectionTitle}>{t.exploreChannels}</Text>
+                <Text style={dynamicStyles.sectionSubtitle}>
+                  Aggregating jobs from multiple sources and presenting them to you in one place
+                </Text>
+              </View>
+              <View style={styles.channelsContainer}>
+                <ScrollView 
+                  ref={channelScrollViewRef}
+                  horizontal 
+                  showsHorizontalScrollIndicator={false} 
+                  style={styles.channelsScroll}
+                  contentContainerStyle={styles.channelsScrollContainer}
+                  scrollEventThrottle={16}
+                >
+                  {/* Duplicate channels for infinite scroll effect */}
+                  {[...telegramChannels, ...telegramChannels].map((channel, index) => (
+                    <View key={`${channel.id || 'ch'}-${index}`} style={styles.channelCardWrapper}>
+                      {renderChannelCard({ item: channel })}
+                    </View>
+                  ))}
+                </ScrollView>
+              </View>
             </View>
           </View>
 
@@ -1666,17 +5376,9 @@ function HomeScreen({ navigation }) {
                 
                 <View style={styles.aboutFeatures}>
                   <View style={styles.aboutFeature}>
-                    <Icon name="verified" size={24} color={colors.beeYellow} />
-                    <View style={styles.aboutFeatureText}>
-                      <Text style={dynamicStyles.aboutFeatureTitle}>Verified Opportunities</Text>
-                      <Text style={dynamicStyles.aboutFeatureDescription}>
-                        All job listings are verified to ensure authenticity and reliability
-                      </Text>
+                    <View style={styles.aboutFeatureIconContainer1}>
+                      <Icon name="business" size={28} color="#fff" />
                     </View>
-                  </View>
-                  
-                  <View style={styles.aboutFeature}>
-                    <Icon name="business" size={24} color={colors.beeYellow} />
                     <View style={styles.aboutFeatureText}>
                       <Text style={dynamicStyles.aboutFeatureTitle}>Top Companies</Text>
                       <Text style={dynamicStyles.aboutFeatureDescription}>
@@ -1686,7 +5388,9 @@ function HomeScreen({ navigation }) {
                   </View>
                   
                   <View style={styles.aboutFeature}>
-                    <Icon name="notifications-active" size={24} color={colors.beeYellow} />
+                    <View style={styles.aboutFeatureIconContainer2}>
+                      <Icon name="notifications-active" size={28} color="#fff" />
+                    </View>
                     <View style={styles.aboutFeatureText}>
                       <Text style={dynamicStyles.aboutFeatureTitle}>Instant Alerts</Text>
                       <Text style={dynamicStyles.aboutFeatureDescription}>
@@ -1696,7 +5400,9 @@ function HomeScreen({ navigation }) {
                   </View>
                   
                   <View style={styles.aboutFeature}>
-                    <Icon name="language" size={24} color={colors.beeYellow} />
+                    <View style={styles.aboutFeatureIconContainer3}>
+                      <Icon name="language" size={28} color="#fff" />
+                    </View>
                     <View style={styles.aboutFeatureText}>
                       <Text style={dynamicStyles.aboutFeatureTitle}>Multilingual Support</Text>
                       <Text style={dynamicStyles.aboutFeatureDescription}>
@@ -1709,120 +5415,43 @@ function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* Jobs Section with Filters */}
+          {/* Jobs Section with Popular Filters */}
           <View style={dynamicStyles.jobsSection}>
             <View style={styles.jobsSectionHeader}>
               <Text style={dynamicStyles.sectionTitle}>{t.recentJobs}</Text>
-              <Text style={dynamicStyles.jobsCount}>{jobs.length} {t.jobsFound}</Text>
             </View>
             
-            <View style={styles.jobsMainContainer}>
-              {/* Filter Sidebar */}
-              <View style={styles.filterSidebarInline}>
-                <Text style={dynamicStyles.filterTitle}>Filter Jobs</Text>
-                
-                {/* Category Filter */}
-                <View style={styles.filterSection}>
-                  <Text style={dynamicStyles.filterLabel}>Category</Text>
-                  <ScrollView style={styles.filterScrollView} showsVerticalScrollIndicator={false}>
-                    <TouchableOpacity 
-                      style={[dynamicStyles.filterOption, selectedCategory === '' && styles.filterOptionActive]}
-                      onPress={() => setSelectedCategory('')}
-                    >
-                      <Text style={[dynamicStyles.filterOptionText, selectedCategory === '' && styles.filterOptionTextActive]}>
-                        All Categories
-                      </Text>
-                    </TouchableOpacity>
-                    {categories.filter(cat => cat.level === 0).map((category) => (
-                      <TouchableOpacity 
-                        key={category.id}
-                        style={[dynamicStyles.filterOption, selectedCategory === category.id && styles.filterOptionActive]}
-                        onPress={() => setSelectedCategory(category.id)}
-                      >
-                        <Text style={[dynamicStyles.filterOptionText, selectedCategory === category.id && styles.filterOptionTextActive]}>
-                          {category.icon} {category.name}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+            {/* Jobs Grid */}
+            <View style={styles.jobsGridContainer}>
+              {loading ? (
+                <View style={styles.loadingContainer}>
+                  <ActivityIndicator size="large" color={colors.beeYellow} />
+                  <Text style={styles.loadingText}>Loading jobs...</Text>
                 </View>
-
-                {/* Contract Type Filter */}
-                <View style={styles.filterSection}>
-                  <Text style={dynamicStyles.filterLabel}>Contract Type</Text>
-                  {['Full-time', 'Part-time', 'Contract', 'Freelance', 'Internship'].map((type) => (
-                    <TouchableOpacity 
-                      key={type}
-                      style={[dynamicStyles.filterOption, selectedContractType === type && styles.filterOptionActive]}
-                      onPress={() => setSelectedContractType(selectedContractType === type ? '' : type)}
-                    >
-                      <Text style={[dynamicStyles.filterOptionText, selectedContractType === type && styles.filterOptionTextActive]}>
-                        {type}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Remote Work Filter */}
-                <View style={styles.filterSection}>
-                  <Text style={dynamicStyles.filterLabel}>Work Location</Text>
-                  <TouchableOpacity 
-                    style={[dynamicStyles.filterOption, isRemote && styles.filterOptionActive]}
-                    onPress={() => setIsRemote(!isRemote)}
-                  >
-                    <Text style={[dynamicStyles.filterOptionText, isRemote && styles.filterOptionTextActive]}>
-                      🌍 Remote Only
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-
-                {/* Popular Locations */}
-                <View style={styles.filterSection}>
-                  <Text style={dynamicStyles.filterLabel}>Location</Text>
-                  {['Addis Ababa', 'Dire Dawa', 'Bahir Dar', 'Hawassa', 'Mekelle', 'Remote'].map((location) => (
-                    <TouchableOpacity 
-                      key={location}
-                      style={[dynamicStyles.filterOption, selectedLocation === location && styles.filterOptionActive]}
-                      onPress={() => setSelectedLocation(selectedLocation === location ? '' : location)}
-                    >
-                      <Text style={[dynamicStyles.filterOptionText, selectedLocation === location && styles.filterOptionTextActive]}>
-                        📍 {location}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Clear Filters */}
-                <TouchableOpacity style={styles.clearFiltersButton} onPress={() => {
-                  setSelectedCategory('');
-                  setSelectedContractType('');
-                  setSelectedLocation('');
-                  setIsRemote(false);
-                  setSearchText('');
-                }}>
-                  <Text style={styles.clearFiltersText}>Clear All Filters</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Jobs Grid */}
-              <View style={styles.jobsGridContainer}>
-                {loading ? (
-                  <View style={styles.loadingContainer}>
-                    <Text style={styles.loadingText}>Loading jobs...</Text>
-                  </View>
-                ) : (
-                  <FlatList
-                    data={jobs}
-                    renderItem={renderJobCard}
-                    keyExtractor={(item) => item.id}
-                    numColumns={3}
-                    showsVerticalScrollIndicator={false}
-                    contentContainerStyle={styles.jobsGrid}
-                    scrollEnabled={false}
-                    columnWrapperStyle={styles.jobsGridRow}
-                  />
-                )}
-              </View>
+              ) : (
+                <FlatList
+                  data={jobs.slice(0, 9)}
+                  renderItem={renderJobCard}
+                  keyExtractor={(item) => item.id}
+                  numColumns={isMobile ? 1 : 3}
+                  key={isMobile ? 'one-column' : 'three-columns'}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.jobsGrid}
+                  scrollEnabled={false}
+                  columnWrapperStyle={!isMobile ? styles.jobsGridRow : null}
+                />
+              )}
+            </View>
+            
+            {/* Login and View More Jobs Button */}
+            <View style={styles.viewMoreContainer}>
+              <TouchableOpacity 
+                style={styles.viewMoreButton}
+                onPress={handleLogin}
+              >
+                <Text style={styles.viewMoreButtonText}>Login and View More Jobs</Text>
+                <Icon name="arrow-forward" size={20} color={colors.white} />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -1836,162 +5465,70 @@ function HomeScreen({ navigation }) {
             </View>
             
             <View style={styles.pricingGrid}>
-              {/* Free Tier */}
-              <View style={styles.pricingCard}>
-                <View style={styles.pricingHeader}>
-                  <Icon name="star-outline" size={40} color={colors.warmGray} style={styles.pricingIcon} />
-                  <Text style={dynamicStyles.pricingTierName}>Free</Text>
-                  <Text style={dynamicStyles.pricingPrice}>0 br</Text>
-                  <Text style={dynamicStyles.pricingPeriod}>per month</Text>
+              {SUBSCRIPTION_PLANS.map((plan) => (
+                <View 
+                  key={plan.id}
+                  style={[
+                    styles.pricingCard,
+                    plan.popular && styles.pricingCardPopular
+                  ]}
+                >
+                  {plan.popular && (
+                    <View style={styles.pricingBadge}>
+                      <Text style={styles.pricingBadgeText}>POPULAR</Text>
+                    </View>
+                  )}
+                  
+                  <View style={styles.pricingHeader}>
+                    <Icon 
+                      name={plan.icon} 
+                      size={40} 
+                      color={plan.color} 
+                      style={styles.pricingIcon} 
+                    />
+                    <Text style={dynamicStyles.pricingTierName}>{plan.name}</Text>
+                    <Text style={dynamicStyles.pricingPrice}>{plan.priceMonthly} br</Text>
+                    <Text style={dynamicStyles.pricingPeriod}>per month</Text>
+                  </View>
+                  
+                  <View style={styles.pricingFeatures}>
+                    {plan.features.map((feature, index) => (
+                      <View 
+                        key={index}
+                        style={[
+                          styles.pricingFeature,
+                          !feature.enabled && styles.pricingFeatureDisabled
+                        ]}
+                      >
+                        <Icon 
+                          name={feature.enabled ? "check-circle" : "cancel"} 
+                          size={20} 
+                          color={feature.enabled ? colors.success : colors.danger} 
+                        />
+                        <Text style={dynamicStyles.pricingFeatureText}>
+                          {feature.text}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                  
+                  <TouchableOpacity 
+                    style={[
+                      styles.pricingButton,
+                      !plan.popular && styles.pricingButtonOutline
+                    ]}
+                  >
+                    <Text 
+                      style={[
+                        styles.pricingButtonText,
+                        !plan.popular && styles.pricingButtonOutlineText
+                      ]}
+                    >
+                      {plan.buttonText}
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                
-                <View style={styles.pricingFeatures}>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      3 custom job notifications per day on mobile app
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Basic job search and browsing
-                    </Text>
-                  </View>
-                  <View style={[styles.pricingFeature, styles.pricingFeatureDisabled]}>
-                    <Icon name="cancel" size={20} color={colors.danger} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Cannot post job ads
-                    </Text>
-                  </View>
-                  <View style={[styles.pricingFeature, styles.pricingFeatureDisabled]}>
-                    <Icon name="cancel" size={20} color={colors.danger} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Limited to 3 notifications daily
-                    </Text>
-                  </View>
-                </View>
-                
-                <TouchableOpacity style={[styles.pricingButton, styles.pricingButtonOutline]}>
-                  <Text style={[styles.pricingButtonText, styles.pricingButtonOutlineText]}>
-                    Get Started
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Standard Tier */}
-              <View style={[styles.pricingCard, styles.pricingCardPopular]}>
-                <View style={styles.pricingBadge}>
-                  <Text style={styles.pricingBadgeText}>POPULAR</Text>
-                </View>
-                
-                <View style={styles.pricingHeader}>
-                  <Icon name="star" size={40} color={colors.beeYellow} style={styles.pricingIcon} />
-                  <Text style={dynamicStyles.pricingTierName}>Standard</Text>
-                  <Text style={dynamicStyles.pricingPrice}>10 br</Text>
-                  <Text style={dynamicStyles.pricingPeriod}>per month</Text>
-                </View>
-                
-                <View style={styles.pricingFeatures}>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Up to 50 custom job notifications per day
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Priority in search results
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Advanced filtering options
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Resume visibility boost
-                    </Text>
-                  </View>
-                  <View style={[styles.pricingFeature, styles.pricingFeatureDisabled]}>
-                    <Icon name="cancel" size={20} color={colors.danger} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Cannot post job ads
-                    </Text>
-                  </View>
-                </View>
-                
-                <TouchableOpacity style={styles.pricingButton}>
-                  <Text style={styles.pricingButtonText}>
-                    Choose Standard
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* Company Tier */}
-              <View style={styles.pricingCard}>
-                <View style={styles.pricingHeader}>
-                  <Icon name="business" size={40} color={colors.deepNavy} style={styles.pricingIcon} />
-                  <Text style={dynamicStyles.pricingTierName}>Company</Text>
-                  <Text style={dynamicStyles.pricingPrice}>500 br</Text>
-                  <Text style={dynamicStyles.pricingPeriod}>per month</Text>
-                </View>
-                
-                <View style={styles.pricingFeatures}>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Post unlimited job ads
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Accept and manage resumes
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Detailed job market statistics
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Applicant tracking system
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Company branding & logo display
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Featured job placements
-                    </Text>
-                  </View>
-                  <View style={styles.pricingFeature}>
-                    <Icon name="check-circle" size={20} color={colors.success} />
-                    <Text style={dynamicStyles.pricingFeatureText}>
-                      Priority support & account manager
-                    </Text>
-                  </View>
-                </View>
-                
-                <TouchableOpacity style={styles.pricingButton}>
-                  <Text style={styles.pricingButtonText}>
-                    Contact Sales
-                  </Text>
-                </TouchableOpacity>
-              </View>
+              ))}
             </View>
           </View>
 
@@ -2010,7 +5547,10 @@ function HomeScreen({ navigation }) {
                     Ethiopia's premier job portal connecting talented professionals with exciting career opportunities.
                   </Text>
                   <View style={styles.footerSocial}>
-                    <TouchableOpacity style={styles.footerSocialButton}>
+                    <TouchableOpacity 
+                      style={styles.footerSocialButton}
+                      onPress={() => Linking.openURL('https://www.facebook.com/nibjobs')}
+                    >
                       <Icon name="facebook" size={20} color={colors.white} />
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.footerSocialButton}>
@@ -2020,21 +5560,51 @@ function HomeScreen({ navigation }) {
                       <Icon name="language" size={20} color={colors.white} />
                     </TouchableOpacity>
                   </View>
+                  
+                  {/* Download App Button */}
+                  <TouchableOpacity 
+                    onPress={handleGooglePlayDownload} 
+                    activeOpacity={0.8}
+                    style={{ 
+                      marginTop: 20,
+                    }}
+                  >
+                    <Image 
+                      source={require('./assets/google_play.png')} 
+                      style={{
+                        height: 50,
+                        width: 150,
+                        resizeMode: 'contain',
+                      }} 
+                    />
+                  </TouchableOpacity>
                 </View>
 
                 {/* Quick Links */}
                 <View style={styles.footerColumn}>
                   <Text style={styles.footerColumnTitle}>For Job Seekers</Text>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={handleLogin}
+                  >
                     <Text style={styles.footerLinkText}>Browse Jobs</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('JobAlerts')}
+                  >
                     <Text style={styles.footerLinkText}>Job Alerts</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('CareerAdvice')}
+                  >
                     <Text style={styles.footerLinkText}>Career Advice</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('ResumeTips')}
+                  >
                     <Text style={styles.footerLinkText}>Resume Tips</Text>
                   </TouchableOpacity>
                 </View>
@@ -2042,16 +5612,31 @@ function HomeScreen({ navigation }) {
                 {/* Employers */}
                 <View style={styles.footerColumn}>
                   <Text style={styles.footerColumnTitle}>For Employers</Text>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={handleLogin}
+                  >
                     <Text style={styles.footerLinkText}>Post a Job</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => {
+                      // Scroll to pricing section
+                      navigation.navigate('Home');
+                    }}
+                  >
                     <Text style={styles.footerLinkText}>Pricing Plans</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={handleLogin}
+                  >
                     <Text style={styles.footerLinkText}>Employer Dashboard</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('RecruitmentTips')}
+                  >
                     <Text style={styles.footerLinkText}>Recruitment Tips</Text>
                   </TouchableOpacity>
                 </View>
@@ -2059,16 +5644,28 @@ function HomeScreen({ navigation }) {
                 {/* Company */}
                 <View style={styles.footerColumn}>
                   <Text style={styles.footerColumnTitle}>Company</Text>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('Home')}
+                  >
                     <Text style={styles.footerLinkText}>About Us</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={handleLogin}
+                  >
                     <Text style={styles.footerLinkText}>Contact</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('Privacy')}
+                  >
                     <Text style={styles.footerLinkText}>Privacy Policy</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.footerLink}>
+                  <TouchableOpacity 
+                    style={styles.footerLink}
+                    onPress={() => navigation.navigate('Privacy')}
+                  >
                     <Text style={styles.footerLinkText}>Terms of Service</Text>
                   </TouchableOpacity>
                 </View>
@@ -2080,15 +5677,15 @@ function HomeScreen({ navigation }) {
                   © {new Date().getFullYear()} NibJobs. All rights reserved.
                 </Text>
                 <View style={styles.footerBottomLinks}>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => navigation.navigate('Privacy')}>
                     <Text style={styles.footerBottomLinkText}>Privacy</Text>
                   </TouchableOpacity>
                   <Text style={styles.footerDivider}>•</Text>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => navigation.navigate('Privacy')}>
                     <Text style={styles.footerBottomLinkText}>Terms</Text>
                   </TouchableOpacity>
                   <Text style={styles.footerDivider}>•</Text>
-                  <TouchableOpacity>
+                  <TouchableOpacity onPress={() => navigation.navigate('Privacy')}>
                     <Text style={styles.footerBottomLinkText}>Cookies</Text>
                   </TouchableOpacity>
                 </View>
@@ -2101,10 +5698,388 @@ function HomeScreen({ navigation }) {
   );
 }
 
+// Privacy Policy Screen
+function PrivacyPolicyScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.contentPage}>
+        <View style={styles.contentPageHeader}>
+          <TouchableOpacity 
+            style={styles.contentPageBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={lightColors.deepNavy} />
+          </TouchableOpacity>
+          <Text style={styles.contentPageTitle}>Privacy Policy</Text>
+        </View>
+        
+        <View style={styles.contentPageBody}>
+          <Text style={styles.contentPageLastUpdated}>Last updated: {new Date().toLocaleDateString()}</Text>
+          
+          <Text style={styles.contentPageSection}>1. Information We Collect</Text>
+          <Text style={styles.contentPageText}>
+            We collect information you provide directly to us, including your name, email address, phone number, resume, and job preferences when you create an account or apply for jobs through NibJobs.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>2. How We Use Your Information</Text>
+          <Text style={styles.contentPageText}>
+            We use the information we collect to provide, maintain, and improve our services, including matching you with relevant job opportunities, sending job alerts, and communicating with you about our services.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>3. Information Sharing</Text>
+          <Text style={styles.contentPageText}>
+            We share your information with employers when you apply for jobs. We do not sell your personal information to third parties. We may share anonymized data for analytics purposes.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>4. Data Security</Text>
+          <Text style={styles.contentPageText}>
+            We implement appropriate security measures to protect your personal information from unauthorized access, alteration, or destruction. However, no method of transmission over the internet is 100% secure.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>5. Your Rights</Text>
+          <Text style={styles.contentPageText}>
+            You have the right to access, update, or delete your personal information at any time. You can also opt out of job alerts and marketing communications.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>6. Contact Us</Text>
+          <Text style={styles.contentPageText}>
+            If you have any questions about this Privacy Policy, please contact us at privacy@nibjobs.com
+          </Text>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Job Alerts Screen
+function JobAlertsScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.contentPage}>
+        <View style={styles.contentPageHeader}>
+          <TouchableOpacity 
+            style={styles.contentPageBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={lightColors.deepNavy} />
+          </TouchableOpacity>
+          <Text style={styles.contentPageTitle}>Job Alerts</Text>
+        </View>
+        
+        <View style={styles.contentPageBody}>
+          <View style={styles.featureHeroSection}>
+            <Icon name="notifications-active" size={64} color={lightColors.beeYellow} />
+            <Text style={styles.featureHeroTitle}>Never Miss a Job Opportunity</Text>
+            <Text style={styles.featureHeroSubtitle}>
+              Get instant notifications when jobs matching your preferences are posted
+            </Text>
+          </View>
+          
+          <Text style={styles.contentPageSection}>How Job Alerts Work</Text>
+          <Text style={styles.contentPageText}>
+            Set up personalized job alerts based on your skills, experience, and career interests. We'll notify you immediately when relevant opportunities are posted.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Alert Preferences</Text>
+          <Text style={styles.contentPageText}>
+            • Choose your preferred job categories{'\n'}
+            • Set location preferences{'\n'}
+            • Filter by salary range{'\n'}
+            • Select notification frequency (instant, daily, or weekly){'\n'}
+            • Customize alert channels (email, SMS, push notifications)
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Stay Ahead of the Competition</Text>
+          <Text style={styles.contentPageText}>
+            Be the first to know about new opportunities. Job alerts give you a competitive advantage by notifying you as soon as jobs are posted, allowing you to apply early.
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.contentPageCTA}
+            onPress={() => navigation.navigate('Signup')}
+          >
+            <Text style={styles.contentPageCTAText}>Sign Up for Job Alerts</Text>
+            <Icon name="arrow-forward" size={20} color={lightColors.white} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Career Advice Screen
+function CareerAdviceScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.contentPage}>
+        <View style={styles.contentPageHeader}>
+          <TouchableOpacity 
+            style={styles.contentPageBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={lightColors.deepNavy} />
+          </TouchableOpacity>
+          <Text style={styles.contentPageTitle}>Career Advice</Text>
+        </View>
+        
+        <View style={styles.contentPageBody}>
+          <View style={styles.featureHeroSection}>
+            <Icon name="school" size={64} color={lightColors.beeYellow} />
+            <Text style={styles.featureHeroTitle}>Advance Your Career</Text>
+            <Text style={styles.featureHeroSubtitle}>
+              Expert guidance to help you navigate your professional journey
+            </Text>
+          </View>
+          
+          <Text style={styles.contentPageSection}>Interview Preparation</Text>
+          <Text style={styles.contentPageText}>
+            Master the art of interviewing with our comprehensive guides. Learn how to answer common questions, prepare for technical interviews, and make a lasting impression on potential employers.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Career Development</Text>
+          <Text style={styles.contentPageText}>
+            Discover strategies for professional growth, skill development, and career advancement. Learn how to set career goals, build your professional network, and identify growth opportunities.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Salary Negotiation</Text>
+          <Text style={styles.contentPageText}>
+            Understand your market value and learn effective negotiation techniques. Get insights on salary ranges for different roles and industries in Ethiopia's job market.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Work-Life Balance</Text>
+          <Text style={styles.contentPageText}>
+            Maintain a healthy balance between professional ambitions and personal well-being. Discover tips for managing stress, setting boundaries, and achieving career satisfaction.
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.contentPageCTA}
+            onPress={() => navigation.navigate('Signup')}
+          >
+            <Text style={styles.contentPageCTAText}>Join NibJobs Today</Text>
+            <Icon name="arrow-forward" size={20} color={lightColors.white} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Resume Tips Screen
+function ResumeTipsScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.contentPage}>
+        <View style={styles.contentPageHeader}>
+          <TouchableOpacity 
+            style={styles.contentPageBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={lightColors.deepNavy} />
+          </TouchableOpacity>
+          <Text style={styles.contentPageTitle}>Resume Tips</Text>
+        </View>
+        
+        <View style={styles.contentPageBody}>
+          <View style={styles.featureHeroSection}>
+            <Icon name="description" size={64} color={lightColors.beeYellow} />
+            <Text style={styles.featureHeroTitle}>Create a Standout Resume</Text>
+            <Text style={styles.featureHeroSubtitle}>
+              Professional guidance for crafting resumes that get noticed
+            </Text>
+          </View>
+          
+          <Text style={styles.contentPageSection}>Resume Formatting</Text>
+          <Text style={styles.contentPageText}>
+            • Use a clean, professional layout{'\n'}
+            • Keep it concise (1-2 pages maximum){'\n'}
+            • Use consistent formatting and fonts{'\n'}
+            • Include proper contact information{'\n'}
+            • Save as PDF for universal compatibility
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Key Sections to Include</Text>
+          <Text style={styles.contentPageText}>
+            Professional Summary: A brief overview of your experience and career objectives{'\n\n'}
+            Work Experience: List relevant positions with measurable achievements{'\n\n'}
+            Education: Include degrees, certifications, and relevant coursework{'\n\n'}
+            Skills: Highlight both technical and soft skills{'\n\n'}
+            Achievements: Showcase awards, recognitions, and notable accomplishments
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Writing Tips</Text>
+          <Text style={styles.contentPageText}>
+            • Use action verbs (achieved, managed, developed, led){'\n'}
+            • Quantify achievements with numbers and metrics{'\n'}
+            • Tailor your resume for each job application{'\n'}
+            • Proofread carefully for errors{'\n'}
+            • Keep language professional and concise
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Common Mistakes to Avoid</Text>
+          <Text style={styles.contentPageText}>
+            ✗ Including irrelevant personal information{'\n'}
+            ✗ Using unprofessional email addresses{'\n'}
+            ✗ Listing duties instead of achievements{'\n'}
+            ✗ Having spelling or grammatical errors{'\n'}
+            ✗ Using generic, one-size-fits-all resumes
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.contentPageCTA}
+            onPress={() => navigation.navigate('Signup')}
+          >
+            <Text style={styles.contentPageCTAText}>Upload Your Resume</Text>
+            <Icon name="arrow-forward" size={20} color={lightColors.white} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Recruitment Tips Screen
+function RecruitmentTipsScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.contentPage}>
+        <View style={styles.contentPageHeader}>
+          <TouchableOpacity 
+            style={styles.contentPageBackButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Icon name="arrow-back" size={24} color={lightColors.deepNavy} />
+          </TouchableOpacity>
+          <Text style={styles.contentPageTitle}>Recruitment Tips</Text>
+        </View>
+        
+        <View style={styles.contentPageBody}>
+          <View style={styles.featureHeroSection}>
+            <Icon name="business-center" size={64} color={lightColors.beeYellow} />
+            <Text style={styles.featureHeroTitle}>Hire Top Talent</Text>
+            <Text style={styles.featureHeroSubtitle}>
+              Best practices for attracting and recruiting exceptional candidates
+            </Text>
+          </View>
+          
+          <Text style={styles.contentPageSection}>Writing Effective Job Posts</Text>
+          <Text style={styles.contentPageText}>
+            • Use clear, descriptive job titles{'\n'}
+            • Provide detailed role responsibilities{'\n'}
+            • List required and preferred qualifications{'\n'}
+            • Include salary range and benefits{'\n'}
+            • Highlight company culture and values{'\n'}
+            • Add a clear call-to-action
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Screening Candidates</Text>
+          <Text style={styles.contentPageText}>
+            Develop a systematic screening process to identify the most qualified candidates. Review resumes for relevant experience, skills, and cultural fit. Use phone screens to assess communication skills and basic qualifications before scheduling full interviews.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Interview Best Practices</Text>
+          <Text style={styles.contentPageText}>
+            • Prepare structured interview questions{'\n'}
+            • Use behavioral and situational questions{'\n'}
+            • Allow candidates to ask questions{'\n'}
+            • Take detailed notes{'\n'}
+            • Involve multiple team members{'\n'}
+            • Provide timely feedback to candidates
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Building Your Employer Brand</Text>
+          <Text style={styles.contentPageText}>
+            Showcase your company culture, values, and employee benefits. Maintain an active presence on job platforms, share employee testimonials, and highlight career development opportunities. A strong employer brand attracts higher quality candidates.
+          </Text>
+          
+          <Text style={styles.contentPageSection}>Diversity and Inclusion</Text>
+          <Text style={styles.contentPageText}>
+            Implement inclusive hiring practices to build diverse teams. Use gender-neutral language in job posts, establish diverse interview panels, and eliminate bias from your recruitment process.
+          </Text>
+          
+          <TouchableOpacity 
+            style={styles.contentPageCTA}
+            onPress={() => navigation.navigate('Signup')}
+          >
+            <Text style={styles.contentPageCTAText}>Start Recruiting</Text>
+            <Icon name="arrow-forward" size={20} color={lightColors.white} />
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// 404 Not Found Screen
+function NotFoundScreen({ navigation }: any) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.notFoundContainer}>
+        <Image 
+          source={require('./assets/mascot_2.jpeg')} 
+          style={styles.notFoundImage}
+          resizeMode="contain"
+        />
+        <Text style={styles.notFoundTitle}>404 - Page Not Found</Text>
+        <Text style={styles.notFoundSubtitle}>
+          Oops! The page you're looking for doesn't exist.
+        </Text>
+        
+        <View style={styles.notFoundButtonsContainer}>
+          <TouchableOpacity 
+            style={styles.notFoundPrimaryButton}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Icon name="home" size={20} color={lightColors.white} />
+            <Text style={styles.notFoundPrimaryButtonText}>Go to Home</Text>
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            style={styles.notFoundSecondaryButton}
+            onPress={() => navigation.navigate('Login')}
+          >
+            <Icon name="login" size={20} color={lightColors.deepNavy} />
+            <Text style={styles.notFoundSecondaryButtonText}>Login</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
 export default function App() {
   const [initializing, setInitializing] = useState(true);
   const [user, setUser] = useState<any>(null);
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [themeLoaded, setThemeLoaded] = useState(false);
   const fontsLoaded = useAppFonts();
+
+  // Load theme preference on mount
+  useEffect(() => {
+    loadThemePreference();
+  }, []);
+
+  const loadThemePreference = async () => {
+    try {
+      const savedTheme = await AsyncStorage.getItem('isDarkMode');
+      if (savedTheme !== null) {
+        setIsDarkMode(savedTheme === 'true');
+      }
+    } catch (error) {
+      console.error('Error loading theme preference:', error);
+    } finally {
+      setThemeLoaded(true);
+    }
+  };
+
+  const toggleTheme = async () => {
+    try {
+      const newTheme = !isDarkMode;
+      setIsDarkMode(newTheme);
+      await AsyncStorage.setItem('isDarkMode', String(newTheme));
+    } catch (error) {
+      console.error('Error saving theme preference:', error);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (authUser) => {
@@ -2114,7 +6089,10 @@ export default function App() {
     return unsubscribe;
   }, [initializing]);
 
-  if (initializing || !fontsLoaded) {
+  // Get current theme colors
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  if (initializing || !fontsLoaded || !themeLoaded) {
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -2126,12 +6104,71 @@ export default function App() {
     );
   }
 
+  const linking = {
+    prefixes: ['http://localhost:19006', 'nibjobs://'],
+    config: {
+      screens: {
+        Home: '',
+        Login: 'login',
+        Signup: 'signup',
+        VerificationRequired: 'verification-required',
+        ForgotPassword: 'forgot-password',
+        Jobs: 'jobs',
+        JobDetails: 'job/:id',
+        AdminPanel: 'admin',
+        Privacy: 'privacy',
+        JobAlerts: 'job-alerts',
+        CareerAdvice: 'career-advice',
+        ResumeTips: 'resume-tips',
+        RecruitmentTips: 'recruitment-tips',
+        NotFound: '*',
+      },
+    },
+  };
+
   return (
-    <NavigationContainer>
+    <NavigationContainer linking={linking}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Home" component={HomeScreen} />
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="AdminPanel" component={AdminPanelScreen} />
+        <Stack.Screen name="Login">
+          {(props) => <LoginScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Signup">
+          {(props) => <SignupScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="VerificationRequired">
+          {(props) => <VerificationRequiredScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="ForgotPassword">
+          {(props) => <ForgotPasswordScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Jobs">
+          {(props) => <JobsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="JobDetails">
+          {(props) => <JobDetailsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="AdminPanel">
+          {(props) => <AdminPanelScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Privacy">
+          {(props) => <PrivacyPolicyScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="JobAlerts">
+          {(props) => <JobAlertsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="CareerAdvice">
+          {(props) => <CareerAdviceScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="ResumeTips">
+          {(props) => <ResumeTipsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="RecruitmentTips">
+          {(props) => <RecruitmentTipsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="NotFound">
+          {(props) => <NotFoundScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
   );
@@ -2150,7 +6187,7 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 32,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginBottom: 10,
   },
@@ -2176,7 +6213,7 @@ const styles = StyleSheet.create({
   },
   loginTitle: {
     fontSize: 32,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginBottom: 8,
   },
@@ -2184,6 +6221,88 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: fonts.regular,
     color: lightColors.warmGray,
+  },
+  verificationMessageContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+  },
+  verificationTitle: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  verificationMessage: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 24,
+  },
+  verificationEmail: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.beeYellow,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  successMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e9',
+    padding: 16,
+    borderRadius: 12,
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  successMessageText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.success,
+    flex: 1,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: lightColors.white,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  modalTitle: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalDescription: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 24,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    marginTop: 16,
   },
   loginForm: {
     width: '100%',
@@ -2198,6 +6317,17 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderWidth: 2,
     borderColor: 'transparent',
+  },
+  inputError: {
+    borderColor: lightColors.danger,
+    backgroundColor: '#fef2f2',
+  },
+  errorText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.danger,
+    marginTop: 8,
+    marginBottom: 8,
   },
   inputIcon: {
     marginRight: 12,
@@ -2216,6 +6346,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 24,
+    paddingHorizontal: 24,
     shadowColor: lightColors.beeYellow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -2237,8 +6368,37 @@ const styles = StyleSheet.create({
   modernLoginButtonText: {
     color: lightColors.deepNavy,
     fontSize: 16,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     marginRight: 8,
+  },
+  modernSecondaryButton: {
+    backgroundColor: 'transparent',
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 40,
+    borderWidth: 2,
+    borderColor: lightColors.beeYellow,
+  },
+  modernSecondaryButtonText: {
+    color: lightColors.beeYellow,
+    fontSize: 16,
+    fontFamily: fonts.regular,
+  },
+  successMessageContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.success + '20',
+    padding: 12,
+    borderRadius: 8,
+    marginVertical: 16,
+  },
+  successMessageText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.success,
+    marginLeft: 8,
   },
   backToHome: {
     flexDirection: 'row',
@@ -2248,12 +6408,225 @@ const styles = StyleSheet.create({
   },
   backToHomeText: {
     fontSize: 14,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.softBlue,
     marginLeft: 8,
   },
   inputContainer: {
     marginBottom: 20,
+  },
+  // Jobs Page Styles
+  jobsPageHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: lightColors.lightGray,
+  },
+  jobsPageHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  headerLogoImage: {
+    width: 32,
+    height: 32,
+    resizeMode: 'contain',
+  },
+  jobsPageTitle: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: lightColors.lightGray,
+    borderRadius: 8,
+  },
+  logoutButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  jobsPageContainer: {
+    flex: 1,
+    backgroundColor: lightColors.cream,
+  },
+  jobsPageSearchSection: {
+    padding: 24,
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: lightColors.lightGray,
+  },
+  jobsPageMainTitle: {
+    fontSize: 32,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 24,
+    textAlign: 'center',
+  },
+  categoriesScrollView: {
+    marginTop: 16,
+  },
+  categoryFilterChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    marginRight: 12,
+    backgroundColor: lightColors.lightGray,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  categoryFilterChipActive: {
+    backgroundColor: lightColors.beeYellow,
+    borderColor: lightColors.honeyGold,
+  },
+  categoryFilterChipText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  categoryFilterChipTextActive: {
+    color: lightColors.deepNavy,
+  },
+  // Popular filters (landing page recent jobs)
+  popularFiltersContainer: {
+    paddingHorizontal: 0,
+    paddingVertical: 0,
+    backgroundColor: lightColors.white,
+    marginBottom: 8,
+  },
+  popularFiltersContent: {
+    alignItems: 'center',
+    paddingHorizontal: 8,
+  },
+  popularFilterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 10,
+    backgroundColor: lightColors.lightGray,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  popularFilterChipActive: {
+    backgroundColor: lightColors.beeYellow,
+    borderColor: lightColors.honeyGold,
+  },
+  popularFilterText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  popularFilterTextActive: {
+    color: lightColors.deepNavy,
+  },
+  jobsPageJobsSection: {
+    padding: 24,
+  },
+
+  // Compact job card & view more styles for landing page
+  viewMoreContainer: {
+    paddingHorizontal: 24,
+    paddingBottom: 32,
+    alignItems: 'center',
+    backgroundColor: lightColors.white,
+  },
+  viewMoreButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.beeYellow,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  viewMoreButtonText: {
+    color: lightColors.white,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    marginRight: 8,
+  },
+
+  // Simple compact job card parts
+  jobCardSimpleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  jobCompanyBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: lightColors.softBlue + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  remoteTag: {
+    backgroundColor: lightColors.success + '15',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  remoteTagText: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: lightColors.success,
+  },
+  jobCardBody: {
+    marginBottom: 12,
+  },
+  jobMetaContainer: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  jobMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  jobSalaryContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
+  jobCardSimpleFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: lightColors.lightGray,
+  },
+  emptyStateContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 80,
+  },
+  emptyStateText: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginTop: 16,
+  },
+  emptyStateSubtext: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 8,
   },
   adminContainer: {
     flex: 1,
@@ -2261,48 +6634,58 @@ const styles = StyleSheet.create({
   },
   sidebar: {
     width: 280,
-    backgroundColor: lightColors.sidebarBg,
-    paddingVertical: 24,
+    backgroundColor: '#FFFFFF',
+    paddingVertical: 0,
     borderRightWidth: 1,
-    borderRightColor: lightColors.sidebarBorder,
-    shadowColor: lightColors.charcoal,
-    shadowOffset: { width: 2, height: 0 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    borderRightColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.08,
+    shadowRadius: 24,
   },
   sidebarHeader: {
     paddingHorizontal: 24,
+    paddingTop: 32,
     paddingBottom: 24,
     borderBottomWidth: 1,
-    borderBottomColor: lightColors.sidebarBorder,
-    marginBottom: 16,
+    borderBottomColor: '#F3F4F6',
+    marginBottom: 24,
   },
   sidebarLogo: {
-    fontSize: 18,
-    fontFamily: fonts.bold,
-    color: lightColors.sidebarTextActive,
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: '#111827',
     marginLeft: 12,
+    letterSpacing: -0.5,
   },
   sidebarUser: {
     fontSize: 13,
     fontFamily: fonts.regular,
-    color: lightColors.sidebarText,
+    color: '#6B7280',
     marginLeft: 8,
+  },
+  sidebarUserRole: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: '#9CA3AF',
+    marginLeft: 8,
+    marginTop: 2,
+    textTransform: 'capitalize',
   },
   sidebarItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    marginHorizontal: 16,
-    marginVertical: 1,
-    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginHorizontal: 12,
+    marginVertical: 2,
+    borderRadius: 12,
     position: 'relative',
+    transition: 'all 0.2s ease',
   },
   sidebarItemActive: {
-    backgroundColor: lightColors.sidebarAccentLight,
-    borderLeftWidth: 3,
-    borderLeftColor: lightColors.sidebarAccent,
+    backgroundColor: '#FEF3C7',
+    borderWidth: 0,
   },
   sidebarIcon: {
     fontSize: 22,
@@ -2310,26 +6693,26 @@ const styles = StyleSheet.create({
   },
   sidebarText: {
     fontSize: 14,
-    fontFamily: fonts.medium,
-    color: lightColors.sidebarText,
+    fontFamily: fonts.regular,
+    color: '#6B7280',
     flex: 1,
+    letterSpacing: 0.2,
   },
   sidebarTextActive: {
-    color: lightColors.sidebarTextActive,
-    fontFamily: fonts.bold,
+    color: '#111827',
+    fontFamily: fonts.regular,
   },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     marginTop: 'auto',
-    marginHorizontal: 16,
-    marginBottom: 16,
-    borderRadius: 10,
-    backgroundColor: lightColors.white,
-    borderWidth: 1,
-    borderColor: lightColors.sidebarBorder,
+    marginHorizontal: 12,
+    marginBottom: 24,
+    borderRadius: 12,
+    backgroundColor: '#FEF2F2',
+    borderWidth: 0,
   },
   logoutIcon: {
     fontSize: 22,
@@ -2337,70 +6720,86 @@ const styles = StyleSheet.create({
   },
   logoutText: {
     fontSize: 14,
-    fontFamily: fonts.medium,
-    color: lightColors.danger,
+    fontFamily: fonts.regular,
+    color: '#DC2626',
+    letterSpacing: 0.2,
   },
   adminMainContent: {
     flex: 1,
-    backgroundColor: lightColors.lightGray,
+    backgroundColor: '#F9FAFB',
   },
   contentContainer: {
     flex: 1,
-    padding: 30,
+    padding: 32,
   },
   contentTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: lightColors.deepNavy,
-    marginBottom: 30,
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: '#111827',
+    marginBottom: 8,
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 30,
+    marginBottom: 32,
+    gap: 20,
   },
   statCard: {
-    backgroundColor: lightColors.white,
-    padding: 20,
-    borderRadius: 12,
-    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    padding: 24,
+    borderRadius: 16,
+    alignItems: 'flex-start',
     flex: 1,
-    marginHorizontal: 5,
-    borderLeftWidth: 4,
-    borderLeftColor: lightColors.beeYellow,
+    marginHorizontal: 0,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    borderLeftWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
   },
   statNumber: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    color: lightColors.deepNavy,
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#111827',
+    letterSpacing: -1,
   },
   statLabel: {
     fontSize: 14,
-    color: lightColors.warmGray,
-    marginTop: 5,
+    color: '#6B7280',
+    marginTop: 6,
+    fontWeight: '500',
   },
   welcomeText: {
     fontSize: 16,
-    color: lightColors.warmGray,
+    color: '#6B7280',
     lineHeight: 24,
   },
   addButton: {
-    backgroundColor: lightColors.beeYellow,
-    padding: 15,
-    borderRadius: 8,
+    backgroundColor: '#F59E0B',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
     marginBottom: 20,
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    transition: 'all 0.2s ease',
   },
   addButtonText: {
-    color: lightColors.deepNavy,
-    fontSize: 16,
-    fontWeight: 'bold',
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    letterSpacing: 0.3,
   },
   listContainer: {
     flex: 1,
   },
   listItem: {
-    backgroundColor: lightColors.white,
+    backgroundColor: '#FFFFFF',
     flexDirection: 'row',
     alignItems: 'center',
     padding: 20,
@@ -2417,12 +6816,12 @@ const styles = StyleSheet.create({
   listTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: lightColors.deepNavy,
+    color: '#111827',
     marginBottom: 5,
   },
   listSubtitle: {
     fontSize: 14,
-    color: lightColors.warmGray,
+    color: '#6B7280',
   },
   statusBadge: {
     fontSize: 12,
@@ -2431,24 +6830,27 @@ const styles = StyleSheet.create({
   },
   listActions: {
     flexDirection: 'row',
+    gap: 10,
   },
   editButton: {
-    backgroundColor: lightColors.softBlue,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 6,
-    marginRight: 10,
+    backgroundColor: '#3B82F6',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    transition: 'all 0.2s ease',
   },
   deleteButton: {
-    backgroundColor: lightColors.danger,
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    borderRadius: 6,
+    backgroundColor: '#EF4444',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+    transition: 'all 0.2s ease',
   },
   actionText: {
-    color: lightColors.white,
+    color: '#FFFFFF',
     fontSize: 14,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
+    letterSpacing: 0.2,
   },
   comingSoon: {
     fontSize: 18,
@@ -2457,6 +6859,215 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 100,
     fontStyle: 'italic',
+  },
+  // Users Management Styles
+  usersHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  usersStats: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  statBadge: {
+    backgroundColor: lightColors.cream,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: lightColors.beeYellow,
+    alignItems: 'center',
+  },
+  statBadgeLabel: {
+    fontSize: 12,
+    color: lightColors.warmGray,
+    fontFamily: fonts.regular,
+    marginBottom: 4,
+  },
+  statBadgeValue: {
+    fontSize: 20,
+    color: lightColors.deepNavy,
+    fontFamily: fonts.regular,
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    marginBottom: 20,
+    borderWidth: 1.5,
+    borderColor: '#E5E7EB',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 1,
+  },
+  searchInput: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: '#111827',
+    outlineStyle: 'none',
+  },
+  tableContainer: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#F3F4F6',
+    overflow: 'hidden',
+    flex: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 3,
+  },
+  tableHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F9FAFB',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  tableHeaderCell: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: '#6B7280',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  tableBody: {
+    flex: 1,
+  },
+  tableRow: {
+    flexDirection: 'row',
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    alignItems: 'center',
+    transition: 'background-color 0.15s ease',
+  },
+  tableRowEven: {
+    backgroundColor: 'transparent',
+  },
+  tableCell: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: '#111827',
+  },
+  roleBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    alignSelf: 'flex-start',
+  },
+  roleBadgeAdmin: {
+    backgroundColor: '#FEF3C7',
+  },
+  roleBadgeSuperAdmin: {
+    backgroundColor: '#FEE2E2',
+  },
+  roleBadgeCompany: {
+    backgroundColor: '#DBEAFE',
+  },
+  roleSelectContainer: {
+    flex: 1,
+  },
+  roleBadgeText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#111827',
+    textTransform: 'capitalize',
+    letterSpacing: 0.3,
+  },
+  statusBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    backgroundColor: '#D1FAE5',
+    alignSelf: 'flex-start',
+  },
+  statusBadgeInactive: {
+    backgroundColor: '#FEE2E2',
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#065F46',
+    letterSpacing: 0.3,
+  },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 16,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 16,
+  },
+  paginationContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: lightColors.lightGray,
+  },
+  paginationButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: lightColors.beeYellow,
+  },
+  paginationButtonDisabled: {
+    opacity: 0.3,
+  },
+  paginationInfo: {
+    alignItems: 'center',
+  },
+  paginationText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  paginationSubtext: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 4,
   },
   // Missing styles - Modern Sidebar Design
   sidebarLogoContainer: {
@@ -2530,12 +7141,12 @@ const styles = StyleSheet.create({
   },
   // Job Grid Styles
   jobsGrid: {
-    paddingTop: 16,
+    paddingTop: 0,
     paddingBottom: 24,
   },
   jobsGridRow: {
     gap: 16,
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
   },
   jobRow: {
     justifyContent: 'space-between',
@@ -2543,8 +7154,8 @@ const styles = StyleSheet.create({
   },
   jobCard: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 0,
+    borderRadius: 12,
+    padding: 16,
     margin: 0,
     marginBottom: 16,
     flex: 1,
@@ -2553,10 +7164,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e9ecef',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
     overflow: 'hidden',
   },
   jobCardHeader: {
@@ -2582,10 +7193,39 @@ const styles = StyleSheet.create({
   },
   jobTypeBadgeText: {
     fontSize: 11,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: '#495057',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  jobCategoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e7f3ff',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    gap: 4,
+  },
+  jobCategoryText: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: '#2c5aa0',
+    textTransform: 'capitalize',
+  },
+  remoteBadge: {
+    backgroundColor: '#d4edda',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  remoteBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.regular,
+    color: '#155724',
+    textTransform: 'uppercase',
   },
   jobCardContent: {
     paddingHorizontal: 16,
@@ -2638,14 +7278,14 @@ const styles = StyleSheet.create({
   },
   jobTitle: {
     fontSize: 16,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#212529',
     marginBottom: 6,
     lineHeight: 22,
   },
   jobCompany: {
     fontSize: 14,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: '#6c757d',
     marginBottom: 0,
   },
@@ -2664,7 +7304,7 @@ const styles = StyleSheet.create({
   },
   jobSalary: {
     fontSize: 14,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#198754',
     flex: 1,
   },
@@ -2682,7 +7322,7 @@ const styles = StyleSheet.create({
   },
   jobBadgeText: {
     fontSize: 9,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     textAlign: 'center',
   },
@@ -2707,7 +7347,7 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 18,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.warmGray,
     marginTop: 16,
     marginBottom: 8,
@@ -2754,7 +7394,7 @@ const styles = StyleSheet.create({
   },
   appTitle: {
     fontSize: 20,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
   },
   toolbarCenter: {
@@ -2791,7 +7431,7 @@ const styles = StyleSheet.create({
   },
   toolbarButtonText: {
     fontSize: 14,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginLeft: 4,
   },
@@ -2812,7 +7452,7 @@ const styles = StyleSheet.create({
   },
   downloadButtonText: {
     fontSize: 12,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginLeft: 4,
   },
@@ -2853,7 +7493,7 @@ const styles = StyleSheet.create({
   },
   languageCode: {
     fontSize: 12,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginRight: 4,
   },
@@ -2886,7 +7526,7 @@ const styles = StyleSheet.create({
   },
   languageLabel: {
     fontSize: 14,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     flex: 1,
   },
@@ -2935,17 +7575,24 @@ const styles = StyleSheet.create({
   },
   mainContent: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
   },
   leftContent: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
+  },
+  channelsSectionWrapper: {
+    width: '100%',
+    backgroundColor: '#ffffff',
   },
   channelsSection: {
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
     paddingVertical: 60,
     paddingHorizontal: 24,
     marginBottom: 0,
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
   },
   channelsContainer: {
     width: '100%',
@@ -2961,7 +7608,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     fontSize: 40,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#212529',
     textAlign: 'center',
     marginBottom: 16,
@@ -3042,7 +7689,7 @@ const styles = StyleSheet.create({
   },
   channelName: {
     fontSize: 12,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: '#212529',
     textAlign: 'center',
     lineHeight: 16,
@@ -3055,7 +7702,7 @@ const styles = StyleSheet.create({
   },
   channelMemberCount: {
     fontSize: 12,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: '#6c757d',
   },
   channelCardFooter: {
@@ -3070,7 +7717,7 @@ const styles = StyleSheet.create({
   },
   channelJoinText: {
     fontSize: 13,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#212529',
     letterSpacing: 0.3,
   },
@@ -3115,13 +7762,15 @@ const styles = StyleSheet.create({
   },
   jobsSection: {
     backgroundColor: '#ffffff',
-    paddingVertical: 40,
+    paddingVertical: 60,
     paddingHorizontal: 24,
-    flex: 1,
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
   },
   jobsSectionHeader: {
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: 8,
   },
   jobsMainContainer: {
     flexDirection: 'row',
@@ -3165,7 +7814,7 @@ const styles = StyleSheet.create({
   },
   filterTitle: {
     fontSize: 18,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginBottom: 20,
   },
@@ -3174,7 +7823,7 @@ const styles = StyleSheet.create({
   },
   filterLabel: {
     fontSize: 14,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginBottom: 12,
   },
@@ -3193,12 +7842,12 @@ const styles = StyleSheet.create({
   },
   filterOptionText: {
     fontSize: 13,
-    fontFamily: fonts.medium,
+    fontFamily: fonts.regular,
     color: lightColors.deepNavy,
   },
   filterOptionTextActive: {
     color: lightColors.white,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
   },
   clearFiltersButton: {
     backgroundColor: lightColors.danger,
@@ -3210,7 +7859,7 @@ const styles = StyleSheet.create({
   clearFiltersText: {
     color: lightColors.white,
     fontSize: 14,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     textAlign: 'center',
   },
   // Brand Image Styles
@@ -3267,6 +7916,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.08)',
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 2,
   },
   modernLogo: {
     width: 24,
@@ -3300,6 +7956,13 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.lightGray,
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   modernLanguageButton: {
     flexDirection: 'row',
@@ -3309,6 +7972,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     backgroundColor: lightColors.lightGray,
     gap: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0, 0, 0, 0.06)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
   },
   modernLanguageText: {
     fontSize: 14,
@@ -3324,6 +7994,22 @@ const styles = StyleSheet.create({
     height: 32,
     resizeMode: 'contain',
   },
+  modernSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 24,
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: lightColors.deepNavy,
+    gap: 8,
+  },
+  modernSecondaryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: lightColors.deepNavy,
+  },
   modernPrimaryButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3337,6 +8023,73 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: lightColors.white,
+  },
+  googleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    backgroundColor: lightColors.white,
+    borderWidth: 2,
+    borderColor: lightColors.softBlue,
+    marginTop: 16,
+    gap: 10,
+  },
+  googleButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: lightColors.deepNavy,
+  },
+  dividerContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+  },
+  divider: {
+    flex: 1,
+    height: 1,
+    backgroundColor: lightColors.warmGray,
+    opacity: 0.3,
+  },
+  dividerText: {
+    marginHorizontal: 16,
+    fontSize: 14,
+    color: lightColors.warmGray,
+    fontWeight: '500',
+  },
+  signupLinkContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  signupLinkText: {
+    fontSize: 14,
+    color: lightColors.warmGray,
+  },
+  signupLink: {
+    fontSize: 14,
+    color: lightColors.softBlue,
+    fontWeight: '600',
+  },
+  forgotPasswordLink: {
+    alignSelf: 'center',
+    marginTop: 16,
+    paddingVertical: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: lightColors.softBlue,
+    fontFamily: fonts.regular,
+  },
+  forgotPasswordDescription: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
   },
   
   // Hero Section Styles
@@ -3491,19 +8244,56 @@ const styles = StyleSheet.create({
     flex: 1,
     minWidth: 280,
     maxWidth: 500,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
     padding: 24,
     borderRadius: 16,
-    borderLeftWidth: 3,
-    borderLeftColor: lightColors.beeYellow,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
   aboutFeatureText: {
     flex: 1,
+  },
+  aboutFeatureIconContainer1: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#FF6B35',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FF6B35',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  aboutFeatureIconContainer2: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#FFB84D',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#FFB84D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  aboutFeatureIconContainer3: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    backgroundColor: '#4A90E2',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#4A90E2',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
   },
   pricingSection: {
     backgroundColor: '#f8f9fa',
@@ -3562,7 +8352,7 @@ const styles = StyleSheet.create({
   },
   pricingBadgeText: {
     fontSize: 11,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#ffffff',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
@@ -3610,7 +8400,7 @@ const styles = StyleSheet.create({
   },
   pricingButtonText: {
     fontSize: 16,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#ffffff',
     letterSpacing: 0.5,
   },
@@ -3651,7 +8441,7 @@ const styles = StyleSheet.create({
   },
   footerBrandName: {
     fontSize: 24,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#ffffff',
   },
   footerDescription: {
@@ -3675,7 +8465,7 @@ const styles = StyleSheet.create({
   },
   footerColumnTitle: {
     fontSize: 16,
-    fontFamily: fonts.bold,
+    fontFamily: fonts.regular,
     color: '#ffffff',
     marginBottom: 20,
     letterSpacing: 0.5,
@@ -3717,5 +8507,1224 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#6c757d',
   },
+  
+  // Job Details Screen Styles
+  jobDetailsContainer: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  jobDetailsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  backButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  jobDetailsHeaderTitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  jobDetailsTopSection: {
+    backgroundColor: lightColors.white,
+    padding: 24,
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+  },
+  jobDetailsIconContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#fff3cd',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  jobDetailsTitle: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  jobDetailsCompany: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  jobDetailsBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    justifyContent: 'center',
+  },
+  jobDetailsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e9ecef',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 4,
+  },
+  jobDetailsBadgeText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#495057',
+    textTransform: 'uppercase',
+  },
+  remoteBadgeLarge: {
+    backgroundColor: '#d4edda',
+  },
+  remoteBadgeTextLarge: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#155724',
+    textTransform: 'uppercase',
+  },
+  categoryBadgeLarge: {
+    backgroundColor: '#e7f3ff',
+  },
+  categoryBadgeTextLarge: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#2c5aa0',
+  },
+  jobDetailsInfoSection: {
+    padding: 20,
+    gap: 12,
+  },
+  jobDetailsInfoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.white,
+    padding: 16,
+    borderRadius: 12,
+    gap: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  jobDetailsInfoContent: {
+    flex: 1,
+  },
+  jobDetailsInfoLabel: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 4,
+  },
+  jobDetailsInfoValue: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  jobDetailsSection: {
+    backgroundColor: lightColors.white,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  jobDetailsSectionTitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 12,
+  },
+  jobDetailsDescription: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    lineHeight: 24,
+  },
+  jobTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  jobTag: {
+    backgroundColor: '#e7f3ff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  jobTagText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.softBlue,
+  },
+  jobDetailsApplySection: {
+    padding: 20,
+    paddingBottom: 40,
+  },
+  jobDetailsApplyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 16,
+    borderRadius: 12,
+    gap: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  jobDetailsApplyButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.white,
+  },
+  jobDetailsMainContainer: {
+    flexDirection: 'row',
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  relatedJobsSidebar: {
+    width: 280,
+    minWidth: 280,
+    maxWidth: 320,
+    backgroundColor: lightColors.white,
+    padding: 20,
+    borderLeftWidth: 1,
+    borderLeftColor: '#e9ecef',
+  },
+  relatedJobsTitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 16,
+  },
+  relatedJobCard: {
+    backgroundColor: lightColors.white,
+    padding: 12,
+    borderRadius: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  relatedJobHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 10,
+  },
+  relatedJobIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+  },
+  relatedJobIconPlaceholder: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  relatedJobTitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 3,
+    lineHeight: 18,
+  },
+  relatedJobCompany: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  relatedJobDetails: {
+    gap: 6,
+    marginBottom: 10,
+  },
+  relatedJobDetailItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  relatedJobDetailText: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    flex: 1,
+  },
+  relatedJobFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  relatedJobSalaryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#d4edda',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  relatedJobSalary: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: lightColors.success,
+  },
+  relatedJobTime: {
+    fontSize: 10,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  relatedJobMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  relatedJobLocation: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  relatedJobsEmpty: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    marginTop: 20,
+  },
+  relatedJobsEmptyText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginTop: 12,
+    textAlign: 'center',
+  },
+  relatedJobsEmptySubtext: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  jobDetailsContent: {
+    flex: 1,
+    backgroundColor: '#f8f9fa',
+  },
+  skillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#d4edda',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  skillTagText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#155724',
+  },
+  sourceChannelImage: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginRight: 8,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  headerActionButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: lightColors.cream,
+  },
+  relatedJobsSidebarHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  jobHeaderCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  jobHeaderTop: {
+    flexDirection: 'row',
+    marginBottom: 20,
+  },
+  jobHeaderInfo: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  companyLogo: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+  },
+  companyLogoPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  jobPostedTime: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  quickStatsContainer: {
+    flexDirection: 'row',
+    gap: 20,
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+  },
+  quickStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  quickStatText: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  salaryHighlight: {
+    backgroundColor: '#d4edda',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#c3e6cb',
+  },
+  salaryHighlightText: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: '#155724',
+  },
+  keyInfoSection: {
+    marginBottom: 20,
+  },
+  jobDetailsSectionHeader: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoCardIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#f8f9fa',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  contentCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  benefitsList: {
+    gap: 12,
+  },
+  benefitItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  benefitText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    lineHeight: 22,
+  },
+  preferredSkillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff3cd',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  preferredSkillTagText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: '#856404',
+  },
+  sourceInfoSection: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  sourceInfoLabel: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  sourceInfoContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  sourceChannelImageLarge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+  sourceInfoText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  applyDisclaimer: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    marginTop: 12,
+  },
+  jobDetailsFooter: {
+    backgroundColor: lightColors.white,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    marginTop: 32,
+  },
+  jobFooterContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  jobFooterSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  jobFooterText: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  jobFooterDividerVertical: {
+    width: 1,
+    height: 20,
+    backgroundColor: '#e9ecef',
+  },
+  jobFooterBottom: {
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  jobFooterBottomText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+  },
+  jobFooterLinks: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  jobFooterLinkDivider: {
+    fontSize: 12,
+    color: lightColors.warmGray,
+  },
+  
+  // Modern Toolbar Styles
+  modernToolbar: {
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 3,
+    position: 'relative',
+    zIndex: 1000,
+  },
+  modernToolbarContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    maxWidth: 1400,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  modernToolbarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+  },
+  modernBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: lightColors.beeYellow + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernToolbarLogo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modernToolbarLogoBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    backgroundColor: lightColors.beeYellow,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modernToolbarLogoImage: {
+    width: 24,
+    height: 24,
+  },
+  modernToolbarBrandText: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    letterSpacing: -0.5,
+  },
+  modernToolbarNav: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginLeft: 16,
+  },
+  modernToolbarNavItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: 'transparent',
+  },
+  modernToolbarNavText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  modernToolbarCenter: {
+    flex: 2,
+    alignItems: 'center',
+    position: 'relative',
+    zIndex: 100,
+  },
+  modernSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.white,
+    borderWidth: 1.5,
+    borderColor: '#e9ecef',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    width: '100%',
+    maxWidth: 500,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 2,
+    elevation: 1,
+  },
+  modernSearchIcon: {
+    marginRight: 8,
+  },
+  modernSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    outlineStyle: 'none',
+  },
+  modernSearchResults: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    marginTop: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    zIndex: 1000,
+  },
+  modernSearchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    gap: 12,
+  },
+  modernSearchResultIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: lightColors.beeYellow + '15',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernSearchResultContent: {
+    flex: 1,
+  },
+  modernSearchResultTitle: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 4,
+  },
+  modernSearchResultMeta: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  modernSearchLoading: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    marginTop: 8,
+    padding: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernSearchLoadingText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  modernToolbarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  
+  // Social Proof Card Styles
+  socialProofCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  socialProofHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 16,
+  },
+  socialProofTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  socialProofStats: {
+    gap: 12,
+  },
+  socialProofStat: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  socialProofStatIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  socialProofStatText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    lineHeight: 20,
+  },
+  socialProofStatBold: {
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  
+  // Match Score Card Styles
+  matchScoreCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 2,
+    borderColor: lightColors.beeYellow,
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  matchScoreHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+  matchScoreLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  matchScoreTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  matchScoreSubtitle: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginTop: 2,
+  },
+  matchScoreBadge: {
+    backgroundColor: lightColors.beeYellow,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  matchScorePercentage: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  matchScoreBar: {
+    height: 8,
+    backgroundColor: lightColors.cream,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  matchScoreProgress: {
+    height: '100%',
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 4,
+  },
+  matchScoreDescription: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    lineHeight: 18,
+  },
+  // Login Prompt Card Styles
+  loginPromptCard: {
+    backgroundColor: lightColors.white,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 16,
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: lightColors.beeYellow,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  loginPromptHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 12,
+  },
+  loginPromptTitle: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  loginPromptSubtitle: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    marginBottom: 16,
+    lineHeight: 20,
+  },
+  loginPromptBenefits: {
+    gap: 14,
+    marginBottom: 20,
+  },
+  loginPromptBenefit: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  loginPromptBenefitText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.charcoal,
+    lineHeight: 20,
+  },
+  loginPromptButton: {
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  loginPromptButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.white,
+  },
+  // Sticky Apply Button
+  stickyApplyButton: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: lightColors.white,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    paddingBottom: 20,
+    borderTopWidth: 1,
+    borderTopColor: lightColors.lightGray,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  // Telegram Source Styles
+  telegramSourceSection: {
+    margin: 16,
+    marginBottom: 24,
+  },
+  telegramSourceHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  telegramSourceTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  telegramSourceCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#0088cc20',
+    shadowColor: '#0088cc',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  telegramChannelInfo: {
+    flexDirection: 'row',
+    gap: 14,
+  },
+  telegramChannelImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    borderColor: '#0088cc',
+  },
+  telegramChannelImagePlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#0088cc10',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#0088cc',
+  },
+  telegramChannelDetails: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  telegramChannelName: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 4,
+  },
+  telegramChannelDescription: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 10,
+  },
+  viewOnTelegramButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#0088cc',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  viewOnTelegramText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.white,
+  },
+  
+  // 404 Not Found Screen Styles
+  notFoundContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+    backgroundColor: lightColors.white,
+  },
+  notFoundImage: {
+    width: 300,
+    height: 300,
+    marginBottom: 32,
+  },
+  notFoundTitle: {
+    fontSize: 32,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  notFoundSubtitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 40,
+    textAlign: 'center',
+    lineHeight: 24,
+  },
+  notFoundButtonsContainer: {
+    flexDirection: 'row',
+    gap: 16,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  notFoundPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+  },
+  notFoundPrimaryButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.white,
+  },
+  notFoundSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: lightColors.white,
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: lightColors.deepNavy,
+  },
+  notFoundSecondaryButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  
+  // Content Pages Styles (Privacy, Job Alerts, Career Advice, etc.)
+  contentPage: {
+    flex: 1,
+    backgroundColor: lightColors.white,
+  },
+  contentPageHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e9ecef',
+    gap: 16,
+  },
+  contentPageBackButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#f8f9fa',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  contentPageTitle: {
+    fontSize: 28,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  contentPageBody: {
+    padding: 24,
+    maxWidth: 800,
+    alignSelf: 'center',
+    width: '100%',
+  },
+  contentPageLastUpdated: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 32,
+  },
+  contentPageSection: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginTop: 32,
+    marginBottom: 16,
+  },
+  contentPageText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: '#495057',
+    lineHeight: 26,
+    marginBottom: 16,
+  },
+  featureHeroSection: {
+    alignItems: 'center',
+    padding: 40,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+    marginBottom: 32,
+  },
+  featureHeroTitle: {
+    fontSize: 32,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginTop: 24,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  featureHeroSubtitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    lineHeight: 28,
+  },
+  contentPageCTA: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    marginTop: 40,
+    alignSelf: 'center',
+  },
+  contentPageCTAText: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.white,
+  },
 });
+
 

@@ -4,13 +4,16 @@ import {
   Text,
   StyleSheet,
   FlatList,
-  TextInput,
   TouchableOpacity,
   RefreshControl,
   SafeAreaView,
-  ScrollView,
   Platform,
+  Alert,
 } from 'react-native';
+import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 
 // Brand colors inspired by bee logo
 const colors = {
@@ -131,33 +134,62 @@ const mockJobs: Job[] = [
 ];
 
 const HomeScreen: React.FC = () => {
-  const [jobs, setJobs] = useState<Job[]>(mockJobs);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [jobs, setJobs] = useState<Job[]>([]);
   const [refreshing, setRefreshing] = useState(false);
-  const [filteredJobs, setFilteredJobs] = useState<Job[]>(mockJobs);
+  const [loading, setLoading] = useState(true);
+  const { user, userProfile } = useAuth();
+  const navigation = useNavigation();
 
-  // Filter jobs based on search query
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredJobs(jobs);
-    } else {
-      const filtered = jobs.filter(job =>
-        job.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        job.location.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredJobs(filtered);
+  // Fetch jobs from Firestore with limit of 9
+  const fetchJobs = async () => {
+    try {
+      const jobsRef = collection(db, 'jobs');
+      const q = query(jobsRef, orderBy('postedAt', 'desc'), limit(9));
+      const querySnapshot = await getDocs(q);
+      
+      const fetchedJobs: Job[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        fetchedJobs.push({
+          id: doc.id,
+          title: data.title || '',
+          company: data.company || '',
+          location: data.location || '',
+          type: data.type || 'full-time',
+          category: data.category || '',
+          salary: data.salary || '',
+          description: data.description || '',
+          requirements: data.requirements || [],
+          remote: data.remote || false,
+          urgent: data.urgent || false,
+          views: data.views || 0,
+          applications: data.applications || 0,
+          postedAt: data.postedAt?.toDate() || new Date(),
+        });
+      });
+      
+      console.log('Fetched jobs count:', fetchedJobs.length);
+      setJobs(fetchedJobs);
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+      // Fallback to mock data if error
+      const limitedMockJobs = mockJobs.slice(0, 9);
+      console.log('Using mock data, count:', limitedMockJobs.length);
+      setJobs(limitedMockJobs);
+    } finally {
+      setLoading(false);
     }
-  }, [searchQuery, jobs]);
+  };
 
-  const onRefresh = useCallback(() => {
+  // Initial fetch
+  useEffect(() => {
+    fetchJobs();
+  }, []);
+
+  const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    // Simulate API call
-    setTimeout(() => {
-      setRefreshing(false);
-      console.log('Jobs refreshed!');
-    }, 2000);
+    await fetchJobs();
+    setRefreshing(false);
   }, []);
 
   const getCategoryIcon = (category: string) => {
@@ -193,50 +225,57 @@ const HomeScreen: React.FC = () => {
     return `${diffInDays}d ago`;
   };
 
+  const handleViewMoreJobs = () => {
+    if (user) {
+      // Navigate to dashboard if user is logged in
+      navigation.navigate('MainTabs' as never);
+    } else {
+      // Show alert and navigate to auth
+      Alert.alert(
+        'Sign Up or Login',
+        'Create an account or login to access more features:\n\n✨ Customize your job search\n📄 Upload your CV\n🔔 Get personalized job alerts\n💼 Track your applications\n🎯 Save favorite jobs',
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Sign Up / Login',
+            onPress: () => navigation.navigate('Auth' as never)
+          }
+        ]
+      );
+    }
+  };
+
   const renderJobCard = ({ item }: { item: Job }) => (
-    <TouchableOpacity style={styles.jobCard} activeOpacity={0.7}>
-      {item.urgent && (
-        <View style={styles.urgentBadge}>
-          <Text style={styles.urgentText}>🔥 Urgent</Text>
-        </View>
-      )}
-      
-      <View style={styles.jobHeader}>
-        <View style={styles.jobTitleRow}>
+    <TouchableOpacity style={styles.jobCard} activeOpacity={0.8}>
+      <View style={styles.cardHeader}>
+        <View style={styles.companyRow}>
           <Text style={styles.categoryIcon}>{getCategoryIcon(item.category)}</Text>
-          <View style={styles.jobTitleContainer}>
-            <Text style={styles.jobTitle} numberOfLines={2}>{item.title}</Text>
+          <View style={styles.companyInfo}>
+            <Text style={styles.jobTitle} numberOfLines={1}>{item.title}</Text>
             <Text style={styles.companyName}>{item.company}</Text>
           </View>
         </View>
-        
-        <View style={styles.jobMeta}>
-          <View style={[styles.jobType, { backgroundColor: getTypeColor(item.type) }]}>
-            <Text style={styles.jobTypeText}>{item.type}</Text>
+        {item.urgent && (
+          <View style={styles.urgentTag}>
+            <Text style={styles.urgentTagText}>🔥</Text>
           </View>
-        </View>
+        )}
       </View>
 
-      <View style={styles.jobDetails}>
-        <View style={styles.locationRow}>
-          <Text style={styles.locationIcon}>📍</Text>
-          <Text style={styles.location}>{item.location}</Text>
-          {item.remote && (
-            <View style={styles.remoteBadge}>
-              <Text style={styles.remoteText}>🌐 Remote</Text>
-            </View>
-          )}
+      <View style={styles.cardBody}>
+        <View style={styles.infoRow}>
+          <Text style={styles.infoText}>📍 {item.location}</Text>
+          {item.remote && <Text style={styles.remoteTag}>🌐 Remote</Text>}
         </View>
-        
-        <Text style={styles.salary}>💰 {item.salary}</Text>
-        <Text style={styles.description} numberOfLines={2}>{item.description}</Text>
-        
-        <View style={styles.jobFooter}>
-          <View style={styles.statsRow}>
-            <Text style={styles.stat}>👁 {item.views} views</Text>
-            <Text style={styles.stat}>📋 {item.applications} applied</Text>
+        <Text style={styles.salaryText}>💰 {item.salary}</Text>
+        <View style={styles.badgeRow}>
+          <View style={[styles.typeBadge, { backgroundColor: getTypeColor(item.type) }]}>
+            <Text style={styles.badgeText}>{item.type}</Text>
           </View>
-          <Text style={styles.timeAgo}>{formatTimeAgo(item.postedAt)}</Text>
+          <Text style={styles.timeText}>{formatTimeAgo(item.postedAt)}</Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -244,52 +283,37 @@ const HomeScreen: React.FC = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header with search */}
+      {/* Simple Header */}
       <View style={styles.header}>
-        <View style={styles.searchContainer}>
-          <View style={styles.searchInputContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search jobs, companies, locations..."
-              placeholderTextColor={colors.warmGray}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-            {searchQuery.length > 0 && (
-              <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearButton}>
-                <Text style={styles.clearIcon}>✕</Text>
-              </TouchableOpacity>
-            )}
+        <View style={styles.titleRow}>
+          <View>
+            <Text style={styles.welcomeText}>Welcome to</Text>
+            <Text style={styles.brandText}>🐝 NibJobs</Text>
           </View>
-          
-          <TouchableOpacity style={styles.loginButton}>
-            <Text style={styles.loginText}>👤 Login</Text>
-          </TouchableOpacity>
+          {!user && (
+            <TouchableOpacity 
+              style={styles.loginButton}
+              onPress={() => navigation.navigate('Auth' as never)}
+            >
+              <Text style={styles.loginText}>Login</Text>
+            </TouchableOpacity>
+          )}
         </View>
-        
-        <View style={styles.statsContainer}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{filteredJobs.length}</Text>
-            <Text style={styles.statLabel}>Jobs Found</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{filteredJobs.filter(j => j.remote).length}</Text>
-            <Text style={styles.statLabel}>Remote</Text>
-          </View>
-          <View style={styles.statItem}>
-            <Text style={styles.statNumber}>{filteredJobs.filter(j => j.urgent).length}</Text>
-            <Text style={styles.statLabel}>Urgent</Text>
-          </View>
-        </View>
+        <Text style={styles.subtitle}>Recent Job Opportunities</Text>
       </View>
 
       {/* Job list */}
       <FlatList
-        data={filteredJobs}
+        data={jobs}
         renderItem={renderJobCard}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.jobsList}
+        ListFooterComponent={
+          <TouchableOpacity style={styles.viewMoreButton} onPress={handleViewMoreJobs}>
+            <Text style={styles.viewMoreText}>View More Jobs</Text>
+            <Text style={styles.viewMoreIcon}>→</Text>
+          </TouchableOpacity>
+        }
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -307,215 +331,165 @@ const HomeScreen: React.FC = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.white,
+    backgroundColor: colors.lightGray,
   },
   header: {
-    backgroundColor: colors.cream,
-    paddingHorizontal: 20,
-    paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.beeYellow,
-  },
-  searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 15,
-    gap: 10,
-  },
-  searchInputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
     backgroundColor: colors.white,
-    borderRadius: 25,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
-    borderWidth: 2,
-    borderColor: colors.honeyGold,
+    paddingHorizontal: 20,
+    paddingVertical: 20,
+    paddingTop: Platform.OS === 'ios' ? 10 : 20,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.lightGray,
   },
-  searchIcon: {
-    fontSize: 18,
-    marginRight: 10,
+  titleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    color: colors.charcoal,
-  },
-  clearButton: {
-    padding: 5,
-  },
-  clearIcon: {
-    fontSize: 16,
+  welcomeText: {
+    fontSize: 14,
     color: colors.warmGray,
   },
-  loginButton: {
-    backgroundColor: colors.deepNavy,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 25,
-  },
-  loginText: {
-    color: colors.white,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  statsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    backgroundColor: colors.white,
-    paddingVertical: 15,
-    borderRadius: 15,
-    borderWidth: 2,
-    borderColor: colors.beeYellow,
-  },
-  statItem: {
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontSize: 24,
+  brandText: {
+    fontSize: 28,
     fontWeight: 'bold',
     color: colors.deepNavy,
   },
-  statLabel: {
-    fontSize: 12,
+  subtitle: {
+    fontSize: 16,
     color: colors.warmGray,
-    marginTop: 2,
+    marginTop: 4,
+  },
+  loginButton: {
+    backgroundColor: colors.beeYellow,
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  loginText: {
+    color: colors.deepNavy,
+    fontSize: 15,
+    fontWeight: 'bold',
   },
   jobsList: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 100,
   },
   jobCard: {
     backgroundColor: colors.white,
-    marginBottom: 20,
-    borderRadius: 20,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: colors.lightGray,
-    shadowColor: colors.charcoal,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
-    elevation: 3,
+    elevation: 2,
   },
-  urgentBadge: {
-    position: 'absolute',
-    top: -5,
-    right: 20,
-    backgroundColor: colors.orange,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
-    zIndex: 1,
-  },
-  urgentText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  jobHeader: {
+  cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 15,
+    marginBottom: 12,
   },
-  jobTitleRow: {
+  companyRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flex: 1,
   },
   categoryIcon: {
-    fontSize: 24,
+    fontSize: 32,
     marginRight: 12,
-    marginTop: 2,
   },
-  jobTitleContainer: {
+  companyInfo: {
     flex: 1,
   },
   jobTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 17,
+    fontWeight: '700',
     color: colors.deepNavy,
     marginBottom: 4,
   },
   companyName: {
-    fontSize: 16,
+    fontSize: 14,
     color: colors.warmGray,
     fontWeight: '500',
   },
-  jobMeta: {
-    alignItems: 'flex-end',
+  urgentTag: {
+    backgroundColor: colors.orange,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  jobType: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
+  urgentTagText: {
+    fontSize: 16,
   },
-  jobTypeText: {
-    color: colors.white,
-    fontSize: 12,
-    fontWeight: 'bold',
-    textTransform: 'uppercase',
+  cardBody: {
+    gap: 8,
   },
-  jobDetails: {
-    gap: 10,
-  },
-  locationRow: {
+  infoRow: {
     flexDirection: 'row',
     alignItems: 'center',
     flexWrap: 'wrap',
+    gap: 8,
   },
-  locationIcon: {
-    fontSize: 16,
-    marginRight: 6,
-  },
-  location: {
-    fontSize: 14,
-    color: colors.warmGray,
-    marginRight: 10,
-  },
-  remoteBadge: {
-    backgroundColor: colors.softBlue,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  remoteText: {
-    color: colors.white,
-    fontSize: 10,
-    fontWeight: 'bold',
-  },
-  salary: {
-    fontSize: 16,
-    fontWeight: 'bold',
-    color: colors.success,
-  },
-  description: {
+  infoText: {
     fontSize: 14,
     color: colors.charcoal,
-    lineHeight: 20,
   },
-  jobFooter: {
+  remoteTag: {
+    fontSize: 12,
+    color: colors.softBlue,
+    fontWeight: '600',
+  },
+  salaryText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: colors.success,
+  },
+  badgeRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 10,
-    paddingTop: 15,
-    borderTopWidth: 1,
-    borderTopColor: colors.lightGray,
+    marginTop: 4,
   },
-  statsRow: {
-    flexDirection: 'row',
-    gap: 15,
+  typeBadge: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
   },
-  stat: {
+  badgeText: {
+    color: colors.white,
+    fontSize: 11,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+  },
+  timeText: {
     fontSize: 12,
     color: colors.warmGray,
+    fontWeight: '600',
   },
-  timeAgo: {
-    fontSize: 12,
-    color: colors.beeYellow,
+  viewMoreButton: {
+    backgroundColor: colors.beeYellow,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 16,
+    borderRadius: 16,
+    marginTop: 8,
+    gap: 8,
+  },
+  viewMoreText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: colors.deepNavy,
+  },
+  viewMoreIcon: {
+    fontSize: 20,
+    color: colors.deepNavy,
     fontWeight: 'bold',
   },
 });

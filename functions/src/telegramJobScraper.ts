@@ -1,8 +1,11 @@
 import * as functions from 'firebase-functions';
+import { onCall, HttpsError } from 'firebase-functions/v2/https';
+import { onSchedule } from 'firebase-functions/v2/scheduler';
 import * as admin from 'firebase-admin';
 import OpenAI from 'openai';
 import { TelegramClient } from 'telegram';
 import { StringSession } from 'telegram/sessions';
+import { sendScrapingReport } from './emailService';
 
 interface TelegramMessage {
   messageId: number;
@@ -41,21 +44,112 @@ interface JobExtractionResult {
   alternativeCategories?: string[];
   skillsRequired?: string[];
   searchKeywords?: string[];
+  expirationDate?: string;
+  relatedUrls?: string[];
 }
 
 class TelegramJobScraper {
   private db: admin.firestore.Firestore;
   private openai: OpenAI;
   private client: TelegramClient | null = null;
+  private progressDocRef: admin.firestore.DocumentReference | null = null;
 
   constructor() {
     this.db = admin.firestore();
     
-    const config = functions.config();
-    
     this.openai = new OpenAI({
-      apiKey: config.openai?.api_key || process.env.OPENAI_API_KEY!,
+      apiKey: process.env.OPENAI_API_KEY!,
     });
+  }
+
+  /**
+   * Initialize progress tracking document
+   */
+  async initializeProgress(totalChannels: number, sessionId: string): Promise<void> {
+    try {
+      this.progressDocRef = this.db.collection('scrapingProgress').doc(sessionId);
+      await this.progressDocRef.set({
+        totalChannels,
+        processedChannels: 0,
+        currentChannel: null,
+        currentChannelIndex: 0,
+        totalJobsExtracted: 0,
+        totalMessagesProcessed: 0,
+        status: 'running',
+        startedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        errors: []
+      });
+      functions.logger.info(`📊 Progress tracking initialized: ${sessionId}`);
+    } catch (error) {
+      functions.logger.error('Failed to initialize progress tracking:', error);
+    }
+  }
+
+  /**
+   * Update progress in real-time
+   */
+  async updateProgress(update: {
+    processedChannels?: number;
+    currentChannel?: string | null;
+    currentChannelIndex?: number;
+    totalJobsExtracted?: number;
+    totalMessagesProcessed?: number;
+    status?: string;
+    errors?: string[];
+  }): Promise<void> {
+    if (!this.progressDocRef) return;
+    
+    try {
+      await this.progressDocRef.update({
+        ...update,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (error) {
+      functions.logger.warn('Failed to update progress:', error);
+    }
+  }
+
+  /**
+   * Complete progress tracking
+   */
+  async completeProgress(success: boolean, finalStats: any, scrapingType: 'manual' | 'scheduled' = 'manual'): Promise<void> {
+    if (!this.progressDocRef) return;
+    
+    try {
+      const completedAt = new Date();
+      
+      await this.progressDocRef.update({
+        status: success ? 'completed' : 'failed',
+        completedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...finalStats
+      });
+      functions.logger.info('✅ Progress tracking completed');
+
+      // Get the progress document to retrieve startedAt
+      const progressDoc = await this.progressDocRef.get();
+      const progressData = progressDoc.data();
+
+      if (progressData) {
+        const startedAt = progressData.startedAt?.toDate() || new Date();
+        
+        // Send email report to superadmins
+        await sendScrapingReport({
+          type: scrapingType,
+          success,
+          totalChannels: progressData.totalChannels || 0,
+          totalJobsExtracted: finalStats.totalJobsExtracted || 0,
+          totalMessagesProcessed: finalStats.totalMessagesProcessed || 0,
+          errors: finalStats.errors || [],
+          startedAt,
+          completedAt,
+          sessionId: this.progressDocRef.id,
+        });
+      }
+    } catch (error) {
+      functions.logger.error('Failed to complete progress tracking:', error);
+    }
   }
 
   async initializeTelegramClient(): Promise<boolean> {
@@ -63,12 +157,10 @@ class TelegramJobScraper {
       if (this.client) {
         return true;
       }
-
-      const config = functions.config();
       
-      const apiId = parseInt(config.telegram?.api_id || process.env.TELEGRAM_API_ID!);
-      const apiHash = config.telegram?.api_hash || process.env.TELEGRAM_API_HASH!;
-      const sessionString = config.telegram?.session_string || process.env.TELEGRAM_SESSION_STRING!;
+      const apiId = parseInt(process.env.TELEGRAM_API_ID!);
+      const apiHash = process.env.TELEGRAM_API_HASH!;
+      const sessionString = process.env.TELEGRAM_SESSION_STRING!;
 
       const session = new StringSession(sessionString);
       this.client = new TelegramClient(session, apiId, apiHash, {
@@ -92,19 +184,30 @@ class TelegramJobScraper {
     }
   }
 
-  async getLatestChannelMessages(channelUsername: string, limit: number = 10): Promise<TelegramMessage[]> {
+  async getLatestChannelMessages(channelUsername: string, limit: number = 100): Promise<TelegramMessage[]> {
     try {
       if (!this.client) {
         throw new Error('Telegram client not initialized');
       }
 
-      functions.logger.info(`📱 Fetching ${limit} messages from @${channelUsername}`);
+      functions.logger.info(`📱 Fetching messages from last 24 hours from @${channelUsername}`);
 
       const entity = await this.client.getEntity(`@${channelUsername}`);
+      
+      // Calculate timestamp for 24 hours ago
+      const twentyFourHoursAgo = Math.floor(Date.now() / 1000) - (24 * 60 * 60);
+      
+      // Fetch messages with a higher limit to ensure we get all from last 24 hours
       const messages = await this.client.getMessages(entity, { limit });
 
       const telegramMessages: TelegramMessage[] = messages
-        .filter(msg => msg.message && msg.message.trim().length > 0)
+        .filter(msg => {
+          if (!msg.message || msg.message.trim().length === 0) return false;
+          
+          // Filter by date - only include messages from last 24 hours
+          const messageDate = msg.date || Math.floor(Date.now() / 1000);
+          return messageDate >= twentyFourHoursAgo;
+        })
         .map(msg => ({
           messageId: msg.id,
           text: msg.message || '',
@@ -113,7 +216,7 @@ class TelegramJobScraper {
           messageUrl: `https://t.me/${channelUsername}/${msg.id}`
         }));
 
-      functions.logger.info(`📨 Retrieved ${telegramMessages.length} messages from @${channelUsername}`);
+      functions.logger.info(`📨 Retrieved ${telegramMessages.length} messages from last 24 hours from @${channelUsername}`);
       return telegramMessages;
 
     } catch (error) {
@@ -136,7 +239,7 @@ class TelegramJobScraper {
       });
 
       const completion = await this.openai.chat.completions.create({
-        model: 'gpt-3.5-turbo',
+        model: 'gpt-4o-mini',
         messages: [
           {
             role: 'system',
@@ -161,7 +264,9 @@ Return JSON:
   "salary": "salary range or null",
   "applyLink": "contact info",
   "isRemote": true/false,
-  "currency": "USD/EUR/ETB etc"
+  "currency": "USD/EUR/ETB etc",
+  "expirationDate": "YYYY-MM-DD or null if not mentioned",
+  "relatedUrls": ["array of any URLs found in description"]
 }
 
 Instructions:
@@ -170,7 +275,9 @@ Instructions:
 3. List up to 3 alternative categories if applicable
 4. Extract specific technical skills separately from general tags
 5. Generate search-friendly keywords
-6. Only return valid job postings.`
+6. Extract expiration/deadline date if mentioned (e.g., "deadline: Jan 15", "expires on 2025-01-20")
+7. Extract all URLs found in the job description (application links, company websites, etc.)
+8. Only return valid job postings.`
           },
           {
             role: 'user',
@@ -186,7 +293,16 @@ Instructions:
         return null;
       }
 
-      const extractedData = JSON.parse(responseContent);
+      // Remove markdown code blocks if present (```json ... ``` or ``` ... ```)
+      let cleanedResponse = responseContent;
+      if (cleanedResponse.startsWith('```')) {
+        // Remove opening ```json or ```
+        cleanedResponse = cleanedResponse.replace(/^```(?:json)?\s*\n?/, '');
+        // Remove closing ```
+        cleanedResponse = cleanedResponse.replace(/\n?```\s*$/, '');
+      }
+
+      const extractedData = JSON.parse(cleanedResponse);
       
       if (!extractedData || !extractedData.isJob) {
         return null;
@@ -233,7 +349,7 @@ Instructions:
   async saveJob(
     jobData: JobExtractionResult, 
     telegramMessage: TelegramMessage,
-    channelUsername: string
+    channel: TelegramChannel
   ): Promise<string | null> {
     try {
       const exists = await this.jobExists(
@@ -271,7 +387,8 @@ Instructions:
         tags: jobData.tags || [],                               // Job-specific tags from AI
         description: jobData.description,
         applyLink: jobData.applyLink || null,
-        jobSource: `Telegram: @${channelUsername}`,
+        jobSource: `Telegram: @${channel.username}`,
+        sourceImageUrl: channel.imageUrl || null,               // Telegram channel image
         rawPost: telegramMessage.text,
         location: jobData.location || null,
         company: jobData.company || null,
@@ -287,6 +404,10 @@ Instructions:
         searchKeywords: searchKeywords,
         skillsRequired: jobData.skillsRequired || [],
         
+        // Additional Job Information
+        expirationDate: jobData.expirationDate ? this.parseExpirationDate(jobData.expirationDate) : null,
+        relatedUrls: jobData.relatedUrls || [],
+        
         // Timestamps
         postedDate: admin.firestore.Timestamp.fromMillis(telegramMessage.date * 1000),
         extractedAt: admin.firestore.Timestamp.now(),
@@ -295,8 +416,8 @@ Instructions:
         // Telegram Source
         telegramMessageId: telegramMessage.messageId.toString(),
         telegramMessageUrl: telegramMessage.messageUrl,
-        telegramChannelId: channelUsername,
-        telegramChannelName: channelUsername,
+        telegramChannelId: channel.username,
+        telegramChannelName: channel.username,
         
         // Engagement & Status
         notificationSent: false,
@@ -389,6 +510,23 @@ Instructions:
   }
 
   /**
+   * Parse expiration date string to Firestore Timestamp
+   */
+  private parseExpirationDate(dateString: string): admin.firestore.Timestamp | null {
+    try {
+      // Try parsing as ISO date format (YYYY-MM-DD)
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return admin.firestore.Timestamp.fromDate(date);
+      }
+      return null;
+    } catch (error) {
+      functions.logger.warn(`Failed to parse expiration date: ${dateString}`, error);
+      return null;
+    }
+  }
+
+  /**
    * Generate search keywords from job data
    */
   private generateSearchKeywords(jobData: JobExtractionResult, categoryData: any): string[] {
@@ -446,7 +584,14 @@ Instructions:
     try {
       functions.logger.info(`🔍 Processing channel: @${channel.username}`);
       
-      const messages = await this.getLatestChannelMessages(channel.username, 10);
+      const messages = await this.getLatestChannelMessages(channel.username);
+      
+      if (messages.length === 0) {
+        const infoMsg = `ℹ️ Channel @${channel.username} had no new messages in the last 24 hours`;
+        functions.logger.info(infoMsg);
+        // Not an error - channels can legitimately have no new messages
+        return result;
+      }
       
       for (const message of messages) {
         try {
@@ -458,15 +603,15 @@ Instructions:
             continue;
           }
 
-          const jobId = await this.saveJob(jobData, message, channel.username);
+          const jobId = await this.saveJob(jobData, message, channel);
           
           if (jobId) {
             result.extracted++;
           }
 
         } catch (error) {
-          const errorMsg = `Error processing message ${message.messageId}: ${error}`;
-          functions.logger.error(errorMsg);
+          const errorMsg = `❌ Error processing message ${message.messageId} in @${channel.username}: ${error instanceof Error ? error.message : String(error)}`;
+          functions.logger.error(errorMsg, { error, channel: channel.username, messageId: message.messageId });
           result.errors.push(errorMsg);
         }
       }
@@ -476,8 +621,8 @@ Instructions:
       functions.logger.info(`✅ Channel @${channel.username}: ${result.extracted} jobs extracted`);
       
     } catch (error) {
-      const errorMsg = `Error processing channel @${channel.username}: ${error}`;
-      functions.logger.error(errorMsg);
+      const errorMsg = `❌ Critical error processing channel @${channel.username}: ${error instanceof Error ? error.message : String(error)}`;
+      functions.logger.error(errorMsg, { error, channel: channel.username });
       result.errors.push(errorMsg);
     }
     
@@ -496,75 +641,116 @@ Instructions:
   }
 }
 
+// 1st Gen Functions (kept for backward compatibility)
 export const scheduledTelegramScraping = functions
   .region('us-central1')
   .pubsub.schedule('0 9 * * *')
   .timeZone('UTC')
   .onRun(async (context) => {
-    const scraper = new TelegramJobScraper();
-
-    try {
-      functions.logger.info('🚀 Starting scheduled Telegram scraping...');
-
-      const connected = await scraper.initializeTelegramClient();
-      if (!connected) {
-        throw new Error('Failed to connect to Telegram');
-      }
-
-      const channelsSnapshot = await admin.firestore()
-        .collection('telegramChannels')
-        .where('isActive', '==', true)
-        .where('scrapingEnabled', '==', true)
-        .get();
-
-      if (channelsSnapshot.empty) {
-        functions.logger.warn('No active channels found');
-        return null;
-      }
-
-      const totalResults = {
-        processed: 0,
-        extracted: 0,
-        errors: [] as string[]
-      };
-
-      for (const doc of channelsSnapshot.docs) {
-        const channel = doc.data() as TelegramChannel;
-        const result = await scraper.processChannel(channel);
-        
-        totalResults.processed += result.processed;
-        totalResults.extracted += result.extracted;
-        totalResults.errors.push(...result.errors);
-      }
-
-      functions.logger.info(`🎉 Scraping completed: ${totalResults.extracted} jobs from ${channelsSnapshot.size} channels`);
-
-      return {
-        success: true,
-        channelsProcessed: channelsSnapshot.size,
-        totalJobsExtracted: totalResults.extracted,
-        totalMessagesProcessed: totalResults.processed,
-        errors: totalResults.errors
-      };
-
-    } catch (error) {
-      functions.logger.error('❌ Scheduled scraping failed:', error);
-      throw error;
-    }
+    functions.logger.info('⚠️ Using 1st Gen function. Please migrate to scheduledTelegramScrapingV2');
+    // Keep minimal implementation for backward compatibility
   });
 
 export const runTelegramScrapingNow = functions
   .region('us-central1')
+  .runWith({
+    timeoutSeconds: 540,
+    memory: '512MB'
+  })
   .https.onCall(async (data, context) => {
-    const scraper = new TelegramJobScraper();
+    throw new functions.https.HttpsError(
+      'unimplemented',
+      'This function has been migrated to runTelegramScrapingNowV2. Please update your client code.'
+    );
+  });
 
-    try {
-      functions.logger.info('🚀 Starting manual scraping...');
+// 2nd Gen Scheduled Function - runs daily at 9 AM UTC
+export const scheduledTelegramScrapingV2 = onSchedule({
+  schedule: '0 9 * * *',
+  timeZone: 'UTC',
+  region: 'us-central1',
+  timeoutSeconds: 3600, // 60 minutes for 2nd gen!
+  memory: '512MiB',
+  secrets: ['OPENAI_API_KEY', 'TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SESSION_STRING', 'GMAIL_USER', 'GMAIL_APP_PASSWORD']
+}, async (event) => {
+  const scraper = new TelegramJobScraper();
+  const sessionId = `scheduled_${Date.now()}`;
 
-      const connected = await scraper.initializeTelegramClient();
-      if (!connected) {
-        throw new functions.https.HttpsError('internal', 'Failed to connect to Telegram');
-      }
+  try {
+    functions.logger.info('🚀 Starting scheduled Telegram scraping...');
+
+    const connected = await scraper.initializeTelegramClient();
+    if (!connected) {
+      throw new Error('Failed to connect to Telegram');
+    }
+
+    const channelsSnapshot = await admin.firestore()
+      .collection('telegramChannels')
+      .where('isActive', '==', true)
+      .where('scrapingEnabled', '==', true)
+      .get();
+
+    if (channelsSnapshot.empty) {
+      functions.logger.warn('No active channels found');
+      return; // Don't return value in 2nd gen scheduled functions
+    }
+
+    // Initialize progress tracking
+    await scraper.initializeProgress(channelsSnapshot.size, sessionId);
+
+    const totalResults = {
+      processed: 0,
+      extracted: 0,
+      errors: [] as string[]
+    };
+
+    for (const doc of channelsSnapshot.docs) {
+      const channel = doc.data() as TelegramChannel;
+      const result = await scraper.processChannel(channel);
+      
+      totalResults.processed += result.processed;
+      totalResults.extracted += result.extracted;
+      totalResults.errors.push(...result.errors);
+    }
+
+    functions.logger.info(`🎉 Scraping completed: ${totalResults.extracted} jobs from ${channelsSnapshot.size} channels`);
+
+    // Mark progress as completed and send email report
+    await scraper.completeProgress(true, {
+      totalJobsExtracted: totalResults.extracted,
+      totalMessagesProcessed: totalResults.processed,
+      errors: totalResults.errors
+    }, 'scheduled');
+
+  } catch (error) {
+    functions.logger.error('❌ Scheduled scraping failed:', error);
+    
+    // Mark progress as failed and send email report
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    await scraper.completeProgress(false, { 
+      error: errorMessage,
+      errors: [errorMessage]
+    }, 'scheduled');
+    
+    throw error;
+  }
+});
+
+// 2nd Gen Callable Function - manual scraping with 60 minute timeout
+export const runTelegramScrapingNowV2 = onCall({
+  region: 'us-central1',
+  timeoutSeconds: 3600, // 60 minutes for 2nd gen!
+  memory: '512MiB',
+  cors: true, // Enable CORS
+  secrets: ['OPENAI_API_KEY', 'TELEGRAM_API_ID', 'TELEGRAM_API_HASH', 'TELEGRAM_SESSION_STRING', 'GMAIL_USER', 'GMAIL_APP_PASSWORD']
+}, async (request) => {
+  const sessionId = `scraping_${Date.now()}`;
+
+  try {
+    functions.logger.info('🚀 Starting manual scraping...');
+    functions.logger.info('Request context:', { 
+      auth: request.auth ? 'authenticated' : 'unauthenticated'
+    });
 
       // Query for active channels with detailed logging
       functions.logger.info('🔍 Querying for active channels...');
@@ -578,7 +764,7 @@ export const runTelegramScrapingNow = functions
 
       if (channelsSnapshot.empty) {
         functions.logger.warn('⚠️ No active channels found for scraping');
-        throw new functions.https.HttpsError('not-found', 'No active channels found. Please ensure channels are marked as active and have scraping enabled.');
+        throw new HttpsError('not-found', 'No active channels found. Please ensure channels are marked as active and have scraping enabled.');
       }
 
       // Log channel details
@@ -588,40 +774,126 @@ export const runTelegramScrapingNow = functions
       });
       functions.logger.info(`📝 Channels to process: ${channelNames.join(', ')}`);
 
-      const totalResults = {
-        processed: 0,
-        extracted: 0,
-        errors: [] as string[]
-      };
+      // Initialize progress tracking
+      const scraper = new TelegramJobScraper();
+      await scraper.initializeProgress(channelsSnapshot.size, sessionId);
 
-      // Process each channel with detailed logging
-      for (const doc of channelsSnapshot.docs) {
-        const channel = doc.data() as TelegramChannel;
-        functions.logger.info(`🔄 Starting to process channel: @${channel.username}`);
-        
-        const result = await scraper.processChannel(channel);
-        
-        totalResults.processed += result.processed;
-        totalResults.extracted += result.extracted;
-        totalResults.errors.push(...result.errors);
-
-        functions.logger.info(`✅ Channel @${channel.username} complete: ${result.extracted} jobs from ${result.processed} messages`);
-      }
-
-      functions.logger.info(`🎉 Manual scraping completed: ${totalResults.extracted} jobs from ${channelsSnapshot.size} channels`);
-
-      return {
+      // Return immediately with session info - scraping continues in background
+      const response = {
         success: true,
-        channelsProcessed: channelsSnapshot.size,
-        totalJobsExtracted: totalResults.extracted,
-        totalMessagesProcessed: totalResults.processed,
-        errors: totalResults.errors,
+        sessionId,
+        channelsToProcess: channelsSnapshot.size,
         channelDetails: channelNames,
-        message: `Successfully extracted ${totalResults.extracted} jobs from ${channelsSnapshot.size} channels`
+        message: `Scraping started for ${channelsSnapshot.size} channels. Monitor progress with session ID: ${sessionId}`
       };
+
+      // Start background scraping (don't await - let it run async)
+      processChannelsInBackground(scraper, channelsSnapshot, sessionId, channelNames).catch(error => {
+        functions.logger.error('Background scraping failed:', error);
+      });
+
+      return response;
 
     } catch (error) {
-      functions.logger.error('❌ Manual scraping failed:', error);
-      throw new functions.https.HttpsError('internal', 'Scraping failed', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      functions.logger.error('❌ Manual scraping failed:', {
+        error: errorMessage,
+        stack: errorStack,
+        type: error instanceof Error ? error.constructor.name : typeof error
+      });
+      
+      // Return error details to the client
+      throw new HttpsError(
+        'internal', 
+        `Scraping failed: ${errorMessage}`,
+        { 
+          error: errorMessage,
+          errorType: error instanceof Error ? error.constructor.name : 'Unknown'
+        }
+      );
     }
-  });
+});
+
+/**
+ * Process channels in the background after returning response to client
+ */
+async function processChannelsInBackground(
+  scraper: TelegramJobScraper,
+  channelsSnapshot: admin.firestore.QuerySnapshot,
+  sessionId: string,
+  channelNames: string[]
+) {
+  const totalResults = {
+    processed: 0,
+    extracted: 0,
+    errors: [] as string[]
+  };
+
+  try {
+    // Connect to Telegram
+    const connected = await scraper.initializeTelegramClient();
+    if (!connected) {
+      throw new Error('Failed to connect to Telegram');
+    }
+
+    // Process each channel with detailed logging and progress updates
+    let channelIndex = 0;
+    for (const doc of channelsSnapshot.docs) {
+      const channel = doc.data() as TelegramChannel;
+      channelIndex++;
+      
+      functions.logger.info(`🔄 [${channelIndex}/${channelsSnapshot.size}] Starting to process channel: @${channel.username}`);
+      
+      // Update progress: starting new channel
+      await scraper.updateProgress({
+        currentChannel: `@${channel.username}`,
+        currentChannelIndex: channelIndex,
+        processedChannels: channelIndex - 1
+      });
+      
+      const result = await scraper.processChannel(channel);
+      
+      totalResults.processed += result.processed;
+      totalResults.extracted += result.extracted;
+      totalResults.errors.push(...result.errors);
+
+      // Update progress: channel completed
+      await scraper.updateProgress({
+        processedChannels: channelIndex,
+        totalJobsExtracted: totalResults.extracted,
+        totalMessagesProcessed: totalResults.processed,
+        errors: totalResults.errors
+      });
+
+      functions.logger.info(`✅ Channel @${channel.username} complete: ${result.extracted} jobs from ${result.processed} messages`);
+    }
+
+    // Mark progress as completed and send email report
+    await scraper.completeProgress(true, {
+      totalJobsExtracted: totalResults.extracted,
+      totalMessagesProcessed: totalResults.processed,
+      errors: totalResults.errors
+    }, 'manual');
+
+    functions.logger.info(`🎉 Manual scraping completed: ${totalResults.extracted} jobs from ${channelsSnapshot.size} channels`);
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+    
+    functions.logger.error('❌ Background scraping failed:', {
+      error: errorMessage,
+      stack: errorStack
+    });
+    
+    // Mark progress as failed with detailed error info and send email report
+    await scraper.completeProgress(false, { 
+      error: errorMessage,
+      errorType: error instanceof Error ? error.constructor.name : 'Unknown',
+      errorDetails: errorStack,
+      errors: [errorMessage]
+    }, 'manual');
+  }
+}

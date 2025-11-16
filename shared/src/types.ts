@@ -59,11 +59,22 @@ export interface Job {
 }
 
 export interface User {
-  userId: string;
-  email?: string;
-  fcmTokens: string[];
-  selectedCategories: string[];
-  isNotificationsEnabled: boolean;
+  uid: string; // Changed from userId to uid to match superadmin
+  email: string;
+  displayName?: string; // Added to match superadmin
+  role: 'superadmin' | 'admin' | 'reader' | 'user';
+  isVerified: boolean;
+  isActive: boolean; // Added to match superadmin
+  lastLogin?: Timestamp; // Added to match superadmin
+  permissions?: string[]; // Added to match superadmin
+  profile?: {
+    avatar?: string;
+    bio?: string;
+    phone?: string;
+  }; // Added to match superadmin
+  fcmTokens?: string[];
+  selectedCategories?: string[];
+  isNotificationsEnabled?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

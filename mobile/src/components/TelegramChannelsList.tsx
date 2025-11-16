@@ -14,7 +14,7 @@ import { doc, updateDoc, deleteDoc, serverTimestamp } from 'firebase/firestore';
 import { ref, deleteObject } from 'firebase/storage';
 import { db, storage } from '../config/firebase';
 
-const colors = {
+const defaultColors = {
   beeYellow: '#F4C430',
   honeyGold: '#D4AF37',
   darkYellow: '#B8860B',
@@ -47,12 +47,14 @@ interface TelegramChannelsListProps {
   channels: TelegramChannel[];
   onChannelsUpdate: () => void;
   loading: boolean;
+  colors?: any;
 }
 
 export default function TelegramChannelsList({ 
   channels, 
   onChannelsUpdate, 
-  loading 
+  loading,
+  colors = defaultColors
 }: TelegramChannelsListProps) {
   const [updatingChannels, setUpdatingChannels] = useState<Set<string>>(new Set());
 
@@ -156,14 +158,14 @@ export default function TelegramChannelsList({
     const isUpdating = updatingChannels.has(channel.id);
     
     return (
-      <View style={styles.channelCard}>
+      <View style={[styles.channelCard, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
         {/* Delete Button - Positioned absolutely */}
         <TouchableOpacity 
-          style={styles.deleteButton}
+          style={[styles.deleteButton, { backgroundColor: colors.danger }]}
           onPress={() => deleteChannel(channel)}
           disabled={isUpdating}
         >
-          <Text style={styles.deleteButtonText}>🗑️</Text>
+          <Text style={[styles.deleteButtonText, { color: colors.white }]}>🗑️</Text>
         </TouchableOpacity>
 
         {/* Channel Header */}
@@ -185,33 +187,33 @@ export default function TelegramChannelsList({
             
             {/* Channel Details */}
             <View style={styles.channelInfo}>
-              <Text style={styles.channelUsername}>@{channel.username}</Text>
-              <Text style={styles.channelName}>{channel.name}</Text>
-              <Text style={styles.channelCategory}>{channel.category}</Text>
+              <Text style={[styles.channelUsername, { color: colors.deepNavy }]}>@{channel.username}</Text>
+              <Text style={[styles.channelName, { color: colors.charcoal }]}>{channel.name}</Text>
+              <Text style={[styles.channelCategory, { color: colors.warmGray }]}>{channel.category}</Text>
             </View>
           </View>
         </View>
 
         {/* Channel Stats */}
-        <View style={styles.channelStats}>
+        <View style={[styles.channelStats, { borderTopColor: colors.lightGray, borderBottomColor: colors.lightGray }]}>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{channel.totalJobsScraped}</Text>
-            <Text style={styles.statLabel}>Jobs Scraped</Text>
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>{channel.totalJobsScraped}</Text>
+            <Text style={[styles.statLabel, { color: colors.charcoal }]}>Jobs Scraped</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatDate(channel.lastScraped)}</Text>
-            <Text style={styles.statLabel}>Last Scraped</Text>
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>{formatDate(channel.lastScraped)}</Text>
+            <Text style={[styles.statLabel, { color: colors.charcoal }]}>Last Scraped</Text>
           </View>
           <View style={styles.statItem}>
-            <Text style={styles.statValue}>{formatDate(channel.createdAt)}</Text>
-            <Text style={styles.statLabel}>Added</Text>
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>{formatDate(channel.createdAt)}</Text>
+            <Text style={[styles.statLabel, { color: colors.charcoal }]}>Added</Text>
           </View>
         </View>
 
         {/* Channel Controls */}
         <View style={styles.channelControls}>
           <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>Active</Text>
+            <Text style={[styles.switchLabel, { color: colors.deepNavy }]}>Active</Text>
             {isUpdating ? (
               <ActivityIndicator size="small" color={colors.success} />
             ) : (
@@ -225,7 +227,7 @@ export default function TelegramChannelsList({
           </View>
           
           <View style={styles.switchContainer}>
-            <Text style={styles.switchLabel}>Scraping</Text>
+            <Text style={[styles.switchLabel, { color: colors.deepNavy }]}>Scraping</Text>
             {isUpdating ? (
               <ActivityIndicator size="small" color={colors.beeYellow} />
             ) : (
@@ -243,11 +245,11 @@ export default function TelegramChannelsList({
         <View style={styles.statusBadges}>
           <View style={[
             styles.statusBadge, 
-            channel.isActive ? styles.activeBadge : styles.inactiveBadge
+            channel.isActive ? { ...styles.activeBadge, backgroundColor: colors.cream, borderColor: colors.beeYellow } : { ...styles.inactiveBadge, backgroundColor: colors.lightGray }
           ]}>
             <Text style={[
               styles.statusBadgeText,
-              channel.isActive ? styles.activeBadgeText : styles.inactiveBadgeText
+              channel.isActive ? { ...styles.activeBadgeText, color: colors.success } : { ...styles.inactiveBadgeText, color: colors.danger }
             ]}>
               {channel.isActive ? '✅ Active' : '❌ Inactive'}
             </Text>
@@ -255,11 +257,11 @@ export default function TelegramChannelsList({
           
           <View style={[
             styles.statusBadge, 
-            channel.scrapingEnabled ? styles.scrapingBadge : styles.noScrapingBadge
+            channel.scrapingEnabled ? { ...styles.scrapingBadge, backgroundColor: colors.cream, borderColor: colors.beeYellow } : { ...styles.noScrapingBadge, backgroundColor: colors.lightGray }
           ]}>
             <Text style={[
               styles.statusBadgeText,
-              channel.scrapingEnabled ? styles.scrapingBadgeText : styles.noScrapingBadgeText
+              channel.scrapingEnabled ? { ...styles.scrapingBadgeText, color: colors.deepNavy } : { ...styles.noScrapingBadgeText, color: colors.warmGray }
             ]}>
               {channel.scrapingEnabled ? '🔄 Scraping' : '⏸️ Paused'}
             </Text>
@@ -271,19 +273,19 @@ export default function TelegramChannelsList({
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { backgroundColor: colors.white }]}>
         <ActivityIndicator size="large" color={colors.beeYellow} />
-        <Text style={styles.loadingText}>Loading channels...</Text>
+        <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading channels...</Text>
       </View>
     );
   }
 
   if (channels.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
+      <View style={[styles.emptyContainer, { backgroundColor: colors.white }]}>
         <Text style={styles.emptyIcon}>📱</Text>
-        <Text style={styles.emptyTitle}>No Channels Yet</Text>
-        <Text style={styles.emptyDescription}>
+        <Text style={[styles.emptyTitle, { color: colors.deepNavy }]}>No Channels Yet</Text>
+        <Text style={[styles.emptyDescription, { color: colors.warmGray }]}>
           Add your first Telegram channel to start scraping job posts
         </Text>
       </View>
@@ -295,28 +297,10 @@ export default function TelegramChannelsList({
 
   return (
     <View style={styles.container}>
-      {/* Summary Stats */}
-      <View style={styles.summaryStats}>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{channels.length}</Text>
-          <Text style={styles.summaryLabel}>Total Channels</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>{activeChannels.length}</Text>
-          <Text style={styles.summaryLabel}>Active</Text>
-        </View>
-        <View style={styles.summaryItem}>
-          <Text style={styles.summaryValue}>
-            {channels.reduce((total, ch) => total + ch.totalJobsScraped, 0)}
-          </Text>
-          <Text style={styles.summaryLabel}>Total Jobs</Text>
-        </View>
-      </View>
-
       {/* Active Channels */}
       {activeChannels.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🟢 Active Channels ({activeChannels.length})</Text>
+          <Text style={[styles.sectionTitle, { color: colors.deepNavy }]}>Active Channels ({activeChannels.length})</Text>
           <FlatList
             data={padArrayForGrid(activeChannels)}
             renderItem={renderChannelCard}
@@ -331,7 +315,7 @@ export default function TelegramChannelsList({
       {/* Inactive Channels */}
       {inactiveChannels.length > 0 && (
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>🔴 Inactive Channels ({inactiveChannels.length})</Text>
+          <Text style={[styles.sectionTitle, { color: colors.deepNavy }]}>Inactive Channels ({inactiveChannels.length})</Text>
           <FlatList
             data={padArrayForGrid(inactiveChannels)}
             renderItem={renderChannelCard}
@@ -358,7 +342,6 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     fontSize: 16,
-    color: colors.warmGray,
     marginTop: 12,
   },
   emptyContainer: {
@@ -374,35 +357,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: colors.deepNavy,
     marginBottom: 8,
   },
   emptyDescription: {
     fontSize: 14,
-    color: colors.warmGray,
     textAlign: 'center',
     lineHeight: 20,
-  },
-  summaryStats: {
-    flexDirection: 'row',
-    backgroundColor: colors.cream,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
-  },
-  summaryItem: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  summaryValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: colors.deepNavy,
-  },
-  summaryLabel: {
-    fontSize: 12,
-    color: colors.warmGray,
-    marginTop: 4,
   },
   section: {
     marginBottom: 24,
@@ -410,7 +370,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.deepNavy,
     marginBottom: 12,
   },
   row: {
@@ -418,19 +377,17 @@ const styles = StyleSheet.create({
     marginHorizontal: -6, // Negative margin to offset card margins
   },
   channelCard: {
-    backgroundColor: colors.white,
-    borderRadius: 12,
-    padding: 12,
-    margin: 6,
+    borderRadius: 16,
+    padding: 20,
+    margin: 8,
     flex: 1,
     maxWidth: '23%', // Slightly less than 25% to account for margins
-    borderWidth: 1,
-    borderColor: colors.lightGray,
+    borderWidth: 2,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
   },
   placeholderCard: {
     backgroundColor: 'transparent',
@@ -454,43 +411,43 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   channelImage: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
   },
   defaultImageContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.lightGray,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
   },
   defaultImageText: {
-    fontSize: 16,
+    fontSize: 24,
   },
   channelInfo: {
     flex: 1,
     alignItems: 'center',
   },
   channelUsername: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.deepNavy,
+    fontSize: 14,
+    fontWeight: '700',
     textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   channelName: {
-    fontSize: 10,
-    color: colors.charcoal,
+    fontSize: 12,
     textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
+    fontWeight: '500',
   },
   channelCategory: {
-    fontSize: 9,
-    color: colors.warmGray,
+    fontSize: 11,
     textAlign: 'center',
     textTransform: 'capitalize',
+    fontWeight: '500',
   },
   deleteButton: {
     position: 'absolute',
@@ -498,19 +455,17 @@ const styles = StyleSheet.create({
     right: 4,
     padding: 4,
     borderRadius: 6,
-    backgroundColor: colors.danger,
     opacity: 0.8,
   },
   deleteButtonText: {
-    fontSize: 12,
-    color: colors.white,
+    fontSize: 14,
+    fontWeight: '600',
   },
   channelStats: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 6,
     borderBottomWidth: 1,
-    borderBottomColor: colors.lightGray,
     marginBottom: 8,
   },
   statItem: {
@@ -518,15 +473,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   statValue: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.deepNavy,
+    fontSize: 13,
+    fontWeight: '700',
   },
   statLabel: {
-    fontSize: 8,
-    color: colors.warmGray,
-    marginTop: 1,
+    fontSize: 10,
+    marginTop: 2,
     textAlign: 'center',
+    fontWeight: '500',
   },
   channelControls: {
     flexDirection: 'column',
@@ -540,46 +494,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   switchLabel: {
-    fontSize: 10,
-    color: colors.charcoal,
-    fontWeight: '500',
+    fontSize: 12,
+    fontWeight: '600',
   },
   statusBadges: {
     flexDirection: 'column',
     gap: 4,
   },
   statusBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
   },
   statusBadgeText: {
-    fontSize: 9,
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
     textAlign: 'center',
   },
   activeBadge: {
     backgroundColor: '#E8F5E8',
   },
   activeBadgeText: {
-    color: colors.success,
   },
   inactiveBadge: {
     backgroundColor: '#FFF2F2',
   },
   inactiveBadgeText: {
-    color: colors.danger,
   },
   scrapingBadge: {
-    backgroundColor: colors.cream,
   },
   scrapingBadgeText: {
-    color: colors.darkYellow,
   },
   noScrapingBadge: {
-    backgroundColor: colors.lightGray,
   },
   noScrapingBadgeText: {
-    color: colors.warmGray,
   },
 });

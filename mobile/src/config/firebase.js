@@ -19,7 +19,9 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase services
 export const db = getFirestore(app);
 export const storage = getStorage(app);
-export const functions = getFunctions(app);
+
+// Initialize Functions with us-central1 region
+export const functions = getFunctions(app, 'us-central1');
 
 // Set functions region if needed
 // connectFunctionsEmulator(functions, "localhost", 5001);
