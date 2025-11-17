@@ -141,3 +141,7 @@ jspm_packages/
 # Temporary folders
 tmp/
 temp/
+
+# Expo
+.expo/
+.expo-shared/
