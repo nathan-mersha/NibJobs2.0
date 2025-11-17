@@ -7,6 +7,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query as dbQuery, orderBy, limit, where, startAfter } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import * as ImagePicker from 'expo-image-picker';
 import TelegramChannelsScreen from './src/screens/TelegramChannelsScreen';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppFonts, fonts } from './src/utils/fonts';
@@ -26,6 +28,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 const functions = getFunctions(app);
+const storage = getStorage(app);
 
 // Brand colors - Updated with modern palette
 const lightColors = {
@@ -41,6 +44,7 @@ const lightColors = {
   softBlue: '#4A90E2',
   success: '#27AE60',
   danger: '#E74C3C',
+  lightPeach: '#FFE5CC',
   // Modern sidebar colors
   sidebarBg: '#F8FAFC',        // Light gray-blue
   sidebarText: '#475569',      // Slate gray
@@ -65,6 +69,7 @@ const darkColors = {
   softBlue: '#60A5FA',
   success: '#10B981',
   danger: '#F87171',
+  lightPeach: '#3A2E28',
   // Modern sidebar colors (dark)
   sidebarBg: '#1F2937',
   sidebarText: '#9CA3AF',
@@ -1074,25 +1079,21 @@ function SignupScreen({ navigation }: any) {
 }
 
 // Job Details Screen
-function JobDetailsScreen({ route, navigation }: any) {
+function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
   const { id } = route.params;
   const [job, setJob] = useState<any>(null);
   const [relatedJobs, setRelatedJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
   
-  // Theme and Language states for toolbar
-  const [isDarkMode, setIsDarkMode] = useState(false);
-  const [currentLanguage, setCurrentLanguage] = useState('en');
-  const [isLanguageDropdownOpen, setIsLanguageDropdownOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const languageButtonRef = useRef<TouchableOpacity>(null);
+  // Language states for toolbar
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   
-  // Search functionality
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchExpanded, setIsSearchExpanded] = useState(false);
-  const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
+  // Search functionality for toolbar
+  const [searchText, setSearchText] = useState('');
   
   // Responsive design
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
@@ -1106,83 +1107,31 @@ function JobDetailsScreen({ route, navigation }: any) {
     });
     return () => subscription?.remove();
   }, []);
+
+  // Listen to auth state for toolbar
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        // Fetch bookmarked jobs
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          setBookmarkedJobs(userDoc.data().bookmarkedJobs || []);
+          setIsSaved(userDoc.data().bookmarkedJobs?.includes(id) || false);
+        }
+      } else {
+        setUser(null);
+        setBookmarkedJobs([]);
+      }
+    });
+
+    return unsubscribe;
+  }, [id]);
   
-  const colors = getColors(isDarkMode);
-  const t = translations[currentLanguage as keyof typeof translations];
+  const colors = isDarkMode ? darkColors : lightColors;
   
-  const languageOptions = [
-    { code: 'en', label: 'English' },
-    { code: 'am', label: 'አማርኛ' },
-    { code: 'ti', label: 'ትግርኛ' },
-    { code: 'or', label: 'Afaan Oromoo' }
-  ];
-  
-  const getCurrentLanguage = () => {
-    return languageOptions.find(lang => lang.code === currentLanguage) || languageOptions[0];
-  };
-  
-  const toggleTheme = () => setIsDarkMode(!isDarkMode);
-  const toggleLanguageDropdown = () => setIsLanguageDropdownOpen(!isLanguageDropdownOpen);
-  const handleLanguageSelect = (langCode: string) => {
-    setCurrentLanguage(langCode);
-    setIsLanguageDropdownOpen(false);
-  };
-  
+  // Simple helper functions
   const handleLogin = () => navigation.navigate('Login');
-  const handleGooglePlayDownload = () => {
-    const playStoreUrl = 'https://play.google.com/store/apps/details?id=com.nibjobs.app';
-    Linking.openURL(playStoreUrl);
-  };
-  
-  // Search functionality
-  const handleSearch = async (query: string) => {
-    setSearchQuery(query);
-    if (query.trim().length < 2) {
-      setSearchResults([]);
-      return;
-    }
-    
-    setIsSearching(true);
-    try {
-      const jobsRef = collection(db, 'jobs');
-      const q = dbQuery(
-        jobsRef,
-        where('status', '==', 'active'),
-        limit(10)
-      );
-      
-      const snapshot = await getDocs(q);
-      const results = snapshot.docs
-        .map(doc => ({ id: doc.id, ...doc.data() }))
-        .filter((job: any) => 
-          job.title.toLowerCase().includes(query.toLowerCase()) ||
-          job.company?.toLowerCase().includes(query.toLowerCase()) ||
-          job.location?.toLowerCase().includes(query.toLowerCase())
-        );
-      
-      setSearchResults(results);
-    } catch (error) {
-      console.error('Search error:', error);
-      setSearchResults([]);
-    } finally {
-      setIsSearching(false);
-    }
-  };
-  
-  const handleSearchJobClick = (jobId: string) => {
-    setSearchQuery('');
-    setSearchResults([]);
-    setIsSearchExpanded(false);
-    navigation.push('JobDetails', { id: jobId });
-  };
-  
-  const toggleSearch = () => {
-    setIsSearchExpanded(!isSearchExpanded);
-    if (!isSearchExpanded) {
-      setSearchQuery('');
-      setSearchResults([]);
-    }
-  };
   
   const dynamicStyles = StyleSheet.create({
     container: {
@@ -1374,193 +1323,167 @@ function JobDetailsScreen({ route, navigation }: any) {
 
   return (
     <SafeAreaView style={dynamicStyles.container}>
-      {/* Enhanced Modern Toolbar */}
-      <View style={styles.modernToolbar}>
-        <View style={styles.modernToolbarContent}>
-          {/* Left Section - Logo & Navigation */}
-          <View style={styles.modernToolbarLeft}>
+      {/* Header Toolbar - Same as Jobs Page */}
+      <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Companies')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
+          </TouchableOpacity>
+          
+          {/* Search Bar */}
+          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.cream }]}>
+            <Icon name="search" size={18} color={colors.warmGray} />
+            <TextInput
+              style={[styles.toolbarSearchInput, { color: colors.deepNavy }]}
+              placeholder="Search jobs..."
+              placeholderTextColor={colors.warmGray}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+          
+          {/* Bookmark Icon */}
+          <TouchableOpacity 
+            style={styles.toolbarIconButton}
+            onPress={() => navigation.navigate('Bookmarks')}
+          >
+            <Icon name="bookmark-outline" size={24} color={colors.deepNavy} />
+            {bookmarkedJobs.length > 0 && (
+              <View style={[styles.bookmarkBadge, { backgroundColor: colors.beeYellow }]}>
+                <Text style={[styles.bookmarkBadgeText, { color: colors.deepNavy }]}>
+                  {bookmarkedJobs.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {/* Language Selector */}
+          <View style={styles.toolbarLanguageContainer}>
             <TouchableOpacity 
-              style={styles.modernBackButton} 
-              onPress={() => navigation.goBack()}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
             >
-              <Icon name="arrow-back" size={22} color={colors.deepNavy} />
+              <Icon name="language" size={20} color={colors.deepNavy} />
+              <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
+                {selectedLanguage}
+              </Text>
+              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
             </TouchableOpacity>
             
-            <TouchableOpacity style={styles.modernToolbarLogo} onPress={() => navigation.navigate('Home')}>
-              <View style={styles.modernToolbarLogoBadge}>
-                <Image source={require('./assets/favicon.png')} style={styles.modernToolbarLogoImage} />
-              </View>
-            </TouchableOpacity>
-            
-            {/* Navigation Links (Desktop) */}
-            {isDesktop && (
-              <View style={styles.modernToolbarNav}>
-                <TouchableOpacity style={styles.modernToolbarNavItem} onPress={() => navigation.navigate('Home')}>
-                  <Icon name="work-outline" size={18} color={colors.deepNavy} />
-                  <Text style={styles.modernToolbarNavText}>Jobs</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.modernToolbarNavItem}>
-                  <Icon name="business-center" size={18} color={colors.deepNavy} />
-                  <Text style={styles.modernToolbarNavText}>Companies</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-
-          {/* Center Section - Search Bar */}
-          <View style={styles.modernToolbarCenter}>
-            {(isSearchExpanded || isDesktop) && (
-              <View style={styles.modernSearchContainer}>
-                <Icon name="search" size={20} color={colors.warmGray} style={styles.modernSearchIcon} />
-                <TextInput
-                  style={styles.modernSearchInput}
-                  placeholder="Search jobs, companies..."
-                  placeholderTextColor={colors.warmGray}
-                  value={searchQuery}
-                  onChangeText={handleSearch}
-                  autoFocus={isSearchExpanded && isMobile}
-                />
-                {searchQuery.length > 0 && (
-                  <TouchableOpacity onPress={() => { setSearchQuery(''); setSearchResults([]); }}>
-                    <Icon name="close" size={20} color={colors.warmGray} />
+            {showLanguageMenu && (
+              <View style={[styles.languageMenu, { backgroundColor: colors.white }]}>
+                {['English', 'Amharic', 'Oromifa'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={styles.languageMenuItem}
+                    onPress={() => {
+                      setSelectedLanguage(lang);
+                      setShowLanguageMenu(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.languageMenuItemText,
+                      { color: colors.deepNavy },
+                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
+                    ]}>
+                      {lang}
+                    </Text>
+                    {selectedLanguage === lang && (
+                      <Icon name="check" size={16} color={colors.beeYellow} />
+                    )}
                   </TouchableOpacity>
-                )}
+                ))}
               </View>
-            )}
-            
-            {/* Search Results Dropdown */}
-            {searchResults.length > 0 && (
-              <View style={styles.modernSearchResults}>
-                <ScrollView style={{ maxHeight: 400 }}>
-                  {searchResults.map((result: any) => (
-                    <TouchableOpacity
-                      key={result.id}
-                      style={styles.modernSearchResultItem}
-                      onPress={() => handleSearchJobClick(result.id)}
-                    >
-                      <View style={styles.modernSearchResultIcon}>
-                        <Icon name="work-outline" size={20} color={colors.beeYellow} />
-                      </View>
-                      <View style={styles.modernSearchResultContent}>
-                        <Text style={styles.modernSearchResultTitle}>{result.title}</Text>
-                        <Text style={styles.modernSearchResultMeta}>
-                          {result.company} • {result.location}
-                        </Text>
-                      </View>
-                      <Icon name="chevron-right" size={20} color={colors.warmGray} />
-                    </TouchableOpacity>
-                  ))}
-                </ScrollView>
-              </View>
-            )}
-            
-            {isSearching && (
-              <View style={styles.modernSearchLoading}>
-                <ActivityIndicator size="small" color={colors.beeYellow} />
-                <Text style={styles.modernSearchLoadingText}>Searching...</Text>
-              </View>
-            )}
-          </View>
-
-          {/* Right Section - Actions */}
-          <View style={styles.modernToolbarRight}>
-            {/* Search Toggle (Mobile) */}
-            {isMobile && !isSearchExpanded && (
-              <TouchableOpacity style={styles.modernIconButton} onPress={toggleSearch}>
-                <Icon name="search" size={22} color={colors.deepNavy} />
-              </TouchableOpacity>
-            )}
-            
-            {(!isSearchExpanded || isDesktop) && (
-              <>
-                {/* Save Job */}
-                <TouchableOpacity 
-                  style={styles.modernIconButton}
-                  onPress={handleSaveJob}
-                >
-                  <Icon 
-                    name={isSaved ? "bookmark" : "bookmark-border"} 
-                    size={22} 
-                    color={isSaved ? colors.beeYellow : colors.deepNavy} 
-                  />
-                </TouchableOpacity>
-
-                {/* Share */}
-                <TouchableOpacity 
-                  style={styles.modernIconButton}
-                  onPress={handleShareJob}
-                >
-                  <Icon name="share" size={22} color={colors.deepNavy} />
-                </TouchableOpacity>
-                
-                {/* Language */}
-                <TouchableOpacity 
-                  style={styles.modernLanguageButton} 
-                  onPress={toggleLanguageDropdown}
-                >
-                  <Text style={styles.modernLanguageText}>{getCurrentLanguage().code.toUpperCase()}</Text>
-                  <Icon 
-                    name={isLanguageDropdownOpen ? "expand-less" : "expand-more"} 
-                    size={16} 
-                    color={colors.deepNavy} 
-                  />
-                </TouchableOpacity>
-
-                {/* Login/Signup Buttons (desktop only) */}
-                {!isMobile && (
-                  <>
-                    <TouchableOpacity style={styles.modernSecondaryButton} onPress={handleLogin}>
-                      <Text style={styles.modernSecondaryButtonText}>{t.login}</Text>
-                    </TouchableOpacity>
-                    
-                    <TouchableOpacity style={styles.modernPrimaryButton} onPress={() => navigation.navigate('Signup')}>
-                      <Icon name="person-add" size={18} color={colors.white} />
-                      <Text style={styles.modernPrimaryButtonText}>{t.signUp}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-              </>
-            )}
-            
-            {/* Close Search (Mobile) */}
-            {isMobile && isSearchExpanded && (
-              <TouchableOpacity style={styles.modernIconButton} onPress={toggleSearch}>
-                <Icon name="close" size={22} color={colors.deepNavy} />
-              </TouchableOpacity>
             )}
           </View>
         </View>
+        
+        <View style={styles.jobsToolbarRight}>
+          {/* Theme Toggle Switch */}
+          <TouchableOpacity 
+            style={styles.toolbarThemeToggle}
+            onPress={toggleTheme}
+          >
+            <View style={[
+              styles.themeToggleTrack,
+              { backgroundColor: isDarkMode ? colors.deepNavy : colors.lightGray }
+            ]}>
+              <Icon 
+                name="wb-sunny" 
+                size={14} 
+                color={isDarkMode ? colors.warmGray : colors.beeYellow}
+                style={styles.themeToggleIconLeft}
+              />
+              <View style={[
+                styles.themeToggleKnob,
+                { backgroundColor: colors.white },
+                isDarkMode && styles.themeToggleKnobActive
+              ]}>
+                <Icon 
+                  name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} 
+                  size={12} 
+                  color={isDarkMode ? colors.deepNavy : colors.beeYellow}
+                />
+              </View>
+              <Icon 
+                name="nightlight-round" 
+                size={14} 
+                color={isDarkMode ? colors.beeYellow : colors.warmGray}
+                style={styles.themeToggleIconRight}
+              />
+            </View>
+          </TouchableOpacity>
 
-        {/* Language Dropdown */}
-        {isLanguageDropdownOpen && (
-          <View style={styles.languageDropdown}>
-            {languageOptions.map((lang) => (
-              <TouchableOpacity
-                key={lang.code}
-                style={styles.languageOption}
-                onPress={() => handleLanguageSelect(lang.code)}
+          {user ? (
+            <>
+              <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
+                {user.email?.split('@')[0]}
+              </Text>
+              <TouchableOpacity 
+                style={styles.toolbarSettingsButton}
+                onPress={() => navigation.navigate('Settings')}
               >
-                <Text style={[
-                  { fontSize: 14, fontFamily: 'Inter-Regular', color: colors.deepNavy },
-                  currentLanguage === lang.code && { color: colors.beeYellow, fontFamily: 'Inter-SemiBold' }
-                ]}>
-                  {lang.label}
-                </Text>
-                {currentLanguage === lang.code && (
-                  <Icon name="check" size={16} color={colors.beeYellow} />
-                )}
+                <Icon name="settings" size={24} color={colors.deepNavy} />
               </TouchableOpacity>
-            ))}
-          </View>
-        )}
+            </>
+          ) : (
+            <>
+              <TouchableOpacity 
+                style={[styles.toolbarLoginButton, { borderColor: colors.deepNavy }]}
+                onPress={() => navigation.navigate('Login')}
+              >
+                <Text style={[styles.toolbarLoginButtonText, { color: colors.deepNavy }]}>
+                  Login
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.toolbarSignupButton, { backgroundColor: colors.beeYellow }]}
+                onPress={() => navigation.navigate('Signup')}
+              >
+                <Text style={[styles.toolbarSignupButtonText, { color: colors.deepNavy }]}>
+                  Sign Up
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       <View style={styles.jobDetailsMainContainer}>
         {/* Main Content with Sticky Apply Button */}
         <View style={{ flex: 1, position: 'relative' }}>
-          <ScrollView style={styles.jobDetailsContent} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
+          <ScrollView style={[styles.jobDetailsContent, { backgroundColor: colors.cream }]} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
           {/* Job Header Card */}
-          <View style={styles.jobHeaderCard}>
+          <View style={[styles.jobHeaderCard, { backgroundColor: colors.white }]}>
             <View style={styles.jobHeaderTop}>
               <View style={styles.jobDetailsIconContainer}>
                 {job.sourceImageUrl ? (
@@ -1570,23 +1493,23 @@ function JobDetailsScreen({ route, navigation }: any) {
                     resizeMode="cover"
                   />
                 ) : (
-                  <View style={styles.companyLogoPlaceholder}>
+                  <View style={[styles.companyLogoPlaceholder, { backgroundColor: colors.cream }]}>
                     <Icon name="business" size={48} color={colors.beeYellow} />
                   </View>
                 )}
               </View>
               <View style={styles.jobHeaderInfo}>
-                <Text style={styles.jobDetailsTitle}>{job.title}</Text>
-                <Text style={styles.jobDetailsCompany}>{job.company}</Text>
+                <Text style={[styles.jobDetailsTitle, { color: colors.deepNavy }]}>{job.title}</Text>
+                <Text style={[styles.jobDetailsCompany, { color: colors.warmGray }]}>{job.company}</Text>
                 <View style={styles.jobMetaRow}>
                   <View style={styles.jobMetaItem}>
                     <Icon name="schedule" size={14} color={colors.warmGray} />
-                    <Text style={styles.jobPostedTime}>{getTimeAgo(job.postedDate || job.createdAt)}</Text>
+                    <Text style={[styles.jobPostedTime, { color: colors.warmGray }]}>{getTimeAgo(job.postedDate || job.createdAt)}</Text>
                   </View>
                   {job.location && (
                     <View style={styles.jobMetaItem}>
                       <Icon name="location-on" size={14} color={colors.danger} />
-                      <Text style={styles.jobPostedTime}>{job.location}</Text>
+                      <Text style={[styles.jobPostedTime, { color: colors.warmGray }]}>{job.location}</Text>
                     </View>
                   )}
                 </View>
@@ -1596,44 +1519,44 @@ function JobDetailsScreen({ route, navigation }: any) {
             {/* Badges */}
             <View style={styles.jobDetailsBadges}>
               {job.contractType && (
-                <View style={styles.jobDetailsBadge}>
+                <View style={[styles.jobDetailsBadge, { backgroundColor: colors.cream }]}>
                   <Icon name="description" size={14} color={colors.softBlue} />
-                  <Text style={styles.jobDetailsBadgeText}>{job.contractType}</Text>
+                  <Text style={[styles.jobDetailsBadgeText, { color: colors.deepNavy }]}>{job.contractType}</Text>
                 </View>
               )}
               {job.isRemote && (
-                <View style={[styles.jobDetailsBadge, styles.remoteBadgeLarge]}>
+                <View style={[styles.jobDetailsBadge, styles.remoteBadgeLarge, { backgroundColor: colors.cream }]}>
                   <Icon name="home-work" size={14} color={colors.success} />
-                  <Text style={styles.remoteBadgeTextLarge}>Remote</Text>
+                  <Text style={[styles.remoteBadgeTextLarge, { color: colors.success }]}>Remote</Text>
                 </View>
               )}
               {job.experienceLevel && (
-                <View style={styles.jobDetailsBadge}>
+                <View style={[styles.jobDetailsBadge, { backgroundColor: colors.cream }]}>
                   <Icon name="military-tech" size={14} color={colors.honeyGold} />
-                  <Text style={styles.jobDetailsBadgeText}>{job.experienceLevel}</Text>
+                  <Text style={[styles.jobDetailsBadgeText, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
                 </View>
               )}
               {job.category && (
-                <View style={[styles.jobDetailsBadge, styles.categoryBadgeLarge]}>
+                <View style={[styles.jobDetailsBadge, styles.categoryBadgeLarge, { backgroundColor: colors.cream }]}>
                   <Icon name="category" size={14} color={colors.softBlue} />
-                  <Text style={styles.categoryBadgeTextLarge}>{job.category}</Text>
+                  <Text style={[styles.categoryBadgeTextLarge, { color: colors.deepNavy }]}>{job.category}</Text>
                 </View>
               )}
             </View>
 
             {/* Quick Stats */}
             {(job.applicants || job.views) && (
-              <View style={styles.quickStatsContainer}>
+              <View style={[styles.quickStatsContainer, { backgroundColor: colors.cream }]}>
                 {job.applicants && (
                   <View style={styles.quickStat}>
                     <Icon name="people" size={18} color={colors.softBlue} />
-                    <Text style={styles.quickStatText}>{job.applicants} applicants</Text>
+                    <Text style={[styles.quickStatText, { color: colors.deepNavy }]}>{job.applicants} applicants</Text>
                   </View>
                 )}
                 {job.views && (
                   <View style={styles.quickStat}>
                     <Icon name="visibility" size={18} color={colors.warmGray} />
-                    <Text style={styles.quickStatText}>{job.views} views</Text>
+                    <Text style={[styles.quickStatText, { color: colors.deepNavy }]}>{job.views} views</Text>
                   </View>
                 )}
               </View>
@@ -1641,23 +1564,23 @@ function JobDetailsScreen({ route, navigation }: any) {
             
             {/* Job Matching Score (if user is logged in) */}
             {auth.currentUser && job.matchScore && (
-              <View style={styles.matchScoreCard}>
+              <View style={[styles.matchScoreCard, { backgroundColor: colors.cream }]}>
                 <View style={styles.matchScoreHeader}>
                   <View style={styles.matchScoreLeft}>
                     <Icon name="stars" size={24} color={colors.beeYellow} />
                     <View>
-                      <Text style={styles.matchScoreTitle}>Job Match</Text>
-                      <Text style={styles.matchScoreSubtitle}>Based on your profile</Text>
+                      <Text style={[styles.matchScoreTitle, { color: colors.deepNavy }]}>Job Match</Text>
+                      <Text style={[styles.matchScoreSubtitle, { color: colors.warmGray }]}>Based on your profile</Text>
                     </View>
                   </View>
-                  <View style={styles.matchScoreBadge}>
-                    <Text style={styles.matchScorePercentage}>{job.matchScore}%</Text>
+                  <View style={[styles.matchScoreBadge, { backgroundColor: colors.beeYellow }]}>
+                    <Text style={[styles.matchScorePercentage, { color: colors.deepNavy }]}>{job.matchScore}%</Text>
                   </View>
                 </View>
-                <View style={styles.matchScoreBar}>
-                  <View style={[styles.matchScoreProgress, { width: `${job.matchScore}%` }]} />
+                <View style={[styles.matchScoreBar, { backgroundColor: colors.lightGray }]}>
+                  <View style={[styles.matchScoreProgress, { width: `${job.matchScore}%`, backgroundColor: colors.beeYellow }]} />
                 </View>
-                <Text style={styles.matchScoreDescription}>
+                <Text style={[styles.matchScoreDescription, { color: colors.warmGray }]}>
                   {job.matchScore >= 80 ? 'Excellent match! Your skills align well with this position.' :
                    job.matchScore >= 60 ? 'Good match. Consider applying to strengthen your profile.' :
                    'Moderate match. You may need additional skills for this role.'}
@@ -1667,121 +1590,121 @@ function JobDetailsScreen({ route, navigation }: any) {
 
             {/* Salary Highlight (if available) */}
             {job.salary && (
-              <View style={styles.salaryHighlight}>
+              <View style={[styles.salaryHighlight, { backgroundColor: colors.cream }]}>
                 <Icon name="attach-money" size={24} color={colors.success} />
-                <Text style={styles.salaryHighlightText}>{job.salary}</Text>
+                <Text style={[styles.salaryHighlightText, { color: colors.success }]}>{job.salary}</Text>
               </View>
             )}
           </View>
 
           {/* Job Description - MOVED TO TOP */}
           {job.description && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="description" size={18} color={colors.deepNavy} /> Job Description
               </Text>
-              <View style={styles.contentCard}>
-                <Text style={styles.jobDetailsDescription}>{job.description}</Text>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.description}</Text>
               </View>
             </View>
           )}
 
           {/* Key Information Grid */}
-          <View style={styles.jobDetailsSection}>
-            <Text style={styles.jobDetailsSectionHeader}>
+          <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
               <Icon name="info" size={18} color={colors.deepNavy} /> Key Information
             </Text>
-            <View style={styles.jobDetailsInfoSection}>
+            <View style={[styles.jobDetailsInfoSection, { backgroundColor: colors.cream }]}>
               {job.salary && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="payments" size={24} color={colors.success} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Salary Range</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.salary}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Salary Range</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.salary}</Text>
                   </View>
                 </View>
               )}
 
               {job.location && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="location-on" size={24} color={colors.danger} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Location</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.location}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Location</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.location}</Text>
                   </View>
                 </View>
               )}
 
               {job.isRemote !== undefined && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="home-work" size={24} color={colors.success} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Work Model</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.isRemote ? 'Remote' : 'On-site'}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Work Model</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.isRemote ? 'Remote' : 'On-site'}</Text>
                   </View>
                 </View>
               )}
               
-              <View style={styles.jobDetailsInfoCard}>
-                <View style={styles.infoCardIcon}>
+              <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                   <Icon name="calendar-today" size={24} color={colors.softBlue} />
                 </View>
                 <View style={styles.jobDetailsInfoContent}>
-                  <Text style={styles.jobDetailsInfoLabel}>Posted Date</Text>
-                  <Text style={styles.jobDetailsInfoValue}>{formatDate(job.postedDate || job.createdAt)}</Text>
+                  <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Posted Date</Text>
+                  <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.postedDate || job.createdAt)}</Text>
                 </View>
               </View>
 
               {job.deadline && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="event" size={24} color={colors.danger} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Application Deadline</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{formatDate(job.deadline)}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Application Deadline</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.deadline)}</Text>
                   </View>
                 </View>
               )}
 
               {job.jobType && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="work" size={24} color={colors.honeyGold} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Job Type</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.jobType}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Job Type</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.jobType}</Text>
                   </View>
                 </View>
               )}
 
               {job.experienceLevel && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="school" size={24} color={colors.softBlue} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Experience Level</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.experienceLevel}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Experience Level</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
                   </View>
                 </View>
               )}
 
               {job.education && (
-                <View style={styles.jobDetailsInfoCard}>
-                  <View style={styles.infoCardIcon}>
+                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
                     <Icon name="school" size={24} color={colors.honeyGold} />
                   </View>
                   <View style={styles.jobDetailsInfoContent}>
-                    <Text style={styles.jobDetailsInfoLabel}>Education</Text>
-                    <Text style={styles.jobDetailsInfoValue}>{job.education}</Text>
+                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Education</Text>
+                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.education}</Text>
                   </View>
                 </View>
               )}
@@ -1790,52 +1713,52 @@ function JobDetailsScreen({ route, navigation }: any) {
 
           {/* About the Company */}
           {job.companyDescription && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="business" size={18} color={colors.deepNavy} /> About {job.company}
               </Text>
-              <View style={styles.contentCard}>
-                <Text style={styles.jobDetailsDescription}>{job.companyDescription}</Text>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.companyDescription}</Text>
               </View>
             </View>
           )}
 
           {/* Requirements */}
           {job.requirements && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="checklist" size={18} color={colors.deepNavy} /> Requirements
               </Text>
-              <View style={styles.contentCard}>
-                <Text style={styles.jobDetailsDescription}>{job.requirements}</Text>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.requirements}</Text>
               </View>
             </View>
           )}
 
           {/* Responsibilities */}
           {job.responsibilities && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="assignment" size={18} color={colors.deepNavy} /> Responsibilities
               </Text>
-              <View style={styles.contentCard}>
-                <Text style={styles.jobDetailsDescription}>{job.responsibilities}</Text>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.responsibilities}</Text>
               </View>
             </View>
           )}
 
           {/* Benefits & Perks */}
           {job.benefits && job.benefits.length > 0 && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="card-giftcard" size={18} color={colors.deepNavy} /> Benefits & Perks
               </Text>
-              <View style={styles.contentCard}>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
                 <View style={styles.benefitsList}>
                   {job.benefits.map((benefit: string, index: number) => (
                     <View key={index} style={styles.benefitItem}>
                       <Icon name="check-circle" size={18} color={colors.success} />
-                      <Text style={styles.benefitText}>{benefit}</Text>
+                      <Text style={[styles.benefitText, { color: colors.deepNavy }]}>{benefit}</Text>
                     </View>
                   ))}
                 </View>
@@ -1845,16 +1768,16 @@ function JobDetailsScreen({ route, navigation }: any) {
 
           {/* Required Skills */}
           {job.requiredSkills && job.requiredSkills.length > 0 && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="emoji-objects" size={18} color={colors.deepNavy} /> Required Skills
               </Text>
-              <View style={styles.contentCard}>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
                 <View style={styles.jobTagsContainer}>
                   {job.requiredSkills.map((skill: string, index: number) => (
-                    <View key={index} style={styles.skillTag}>
+                    <View key={index} style={[styles.skillTag, { backgroundColor: colors.cream, borderColor: colors.success }]}>
                       <Icon name="check-circle" size={14} color={colors.success} />
-                      <Text style={styles.skillTagText}>{skill}</Text>
+                      <Text style={[styles.skillTagText, { color: colors.deepNavy }]}>{skill}</Text>
                     </View>
                   ))}
                 </View>
@@ -1864,16 +1787,16 @@ function JobDetailsScreen({ route, navigation }: any) {
 
           {/* Nice to Have Skills */}
           {job.preferredSkills && job.preferredSkills.length > 0 && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="star-outline" size={18} color={colors.deepNavy} /> Nice to Have
               </Text>
-              <View style={styles.contentCard}>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
                 <View style={styles.jobTagsContainer}>
                   {job.preferredSkills.map((skill: string, index: number) => (
-                    <View key={index} style={styles.preferredSkillTag}>
+                    <View key={index} style={[styles.preferredSkillTag, { backgroundColor: colors.cream, borderColor: colors.honeyGold }]}>
                       <Icon name="star-border" size={14} color={colors.honeyGold} />
-                      <Text style={styles.preferredSkillTagText}>{skill}</Text>
+                      <Text style={[styles.preferredSkillTagText, { color: colors.deepNavy }]}>{skill}</Text>
                     </View>
                   ))}
                 </View>
@@ -1883,15 +1806,15 @@ function JobDetailsScreen({ route, navigation }: any) {
 
           {/* Tags */}
           {job.tags && job.tags.length > 0 && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="local-offer" size={18} color={colors.deepNavy} /> Tags
               </Text>
-              <View style={styles.contentCard}>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
                 <View style={styles.jobTagsContainer}>
                   {job.tags.map((tag: string, index: number) => (
-                    <View key={index} style={styles.jobTag}>
-                      <Text style={styles.jobTagText}>{tag}</Text>
+                    <View key={index} style={[styles.jobTag, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+                      <Text style={[styles.jobTagText, { color: colors.deepNavy }]}>{tag}</Text>
                     </View>
                   ))}
                 </View>
@@ -1900,11 +1823,11 @@ function JobDetailsScreen({ route, navigation }: any) {
           )}
 
           {/* Job Source & Activity - Merged */}
-          <View style={styles.jobDetailsSection}>
-            <Text style={styles.jobDetailsSectionHeader}>
+          <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
               <Icon name="info" size={18} color={colors.deepNavy} /> Job Source & Activity
             </Text>
-            <View style={styles.contentCard}>
+            <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
               {/* Application Activity Stats */}
               {(job.recentApplicants || job.viewsLast24h) && (
                 <View style={{ marginBottom: 16 }}>
@@ -1979,12 +1902,12 @@ function JobDetailsScreen({ route, navigation }: any) {
 
           {/* Application Process */}
           {job.applicationProcess && (
-            <View style={styles.jobDetailsSection}>
-              <Text style={styles.jobDetailsSectionHeader}>
+            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
                 <Icon name="how-to-reg" size={18} color={colors.deepNavy} /> Application Process
               </Text>
-              <View style={styles.contentCard}>
-                <Text style={styles.jobDetailsDescription}>{job.applicationProcess}</Text>
+              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.applicationProcess}</Text>
               </View>
             </View>
           )}
@@ -1993,85 +1916,85 @@ function JobDetailsScreen({ route, navigation }: any) {
           
           {/* Login Prompt for Non-Authenticated Users - Moved to Bottom */}
           {!auth.currentUser && (
-            <View style={styles.loginPromptCard}>
+            <View style={[styles.loginPromptCard, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.loginPromptHeader}>
                 <Icon name="account-circle" size={32} color={colors.beeYellow} />
-                <Text style={styles.loginPromptTitle}>Want to do more?</Text>
+                <Text style={[styles.loginPromptTitle, { color: colors.deepNavy }]}>Want to do more?</Text>
               </View>
-              <Text style={styles.loginPromptSubtitle}>Create an account or login to unlock these features:</Text>
+              <Text style={[styles.loginPromptSubtitle, { color: colors.warmGray }]}>Create an account or login to unlock these features:</Text>
               
               <View style={styles.loginPromptBenefits}>
                 <View style={styles.loginPromptBenefit}>
                   <Icon name="bookmark" size={20} color={colors.softBlue} />
-                  <Text style={styles.loginPromptBenefitText}>Save this job for later and build your collection</Text>
+                  <Text style={[styles.loginPromptBenefitText, { color: colors.warmGray }]}>Save this job for later and build your collection</Text>
                 </View>
                 
                 <View style={styles.loginPromptBenefit}>
                   <Icon name="stars" size={20} color={colors.beeYellow} />
-                  <Text style={styles.loginPromptBenefitText}>See how well your profile matches this job</Text>
+                  <Text style={[styles.loginPromptBenefitText, { color: colors.warmGray }]}>See how well your profile matches this job</Text>
                 </View>
                 
                 <View style={styles.loginPromptBenefit}>
                   <Icon name="notifications-active" size={20} color={colors.success} />
-                  <Text style={styles.loginPromptBenefitText}>Get notifications for jobs tailored to your skills</Text>
+                  <Text style={[styles.loginPromptBenefitText, { color: colors.warmGray }]}>Get notifications for jobs tailored to your skills</Text>
                 </View>
               </View>
               
               <TouchableOpacity 
-                style={styles.loginPromptButton}
+                style={[styles.loginPromptButton, { backgroundColor: colors.beeYellow }]}
                 onPress={handleLogin}
               >
-                <Text style={styles.loginPromptButtonText}>Login or Sign Up</Text>
-                <Icon name="arrow-forward" size={18} color={colors.white} />
+                <Text style={[styles.loginPromptButtonText, { color: colors.deepNavy }]}>Login or Sign Up</Text>
+                <Icon name="arrow-forward" size={18} color={colors.deepNavy} />
               </TouchableOpacity>
             </View>
           )}
           
           {/* Footer */}
-          <View style={styles.jobDetailsFooter}>
+          <View style={[styles.jobDetailsFooter, { backgroundColor: colors.cream, borderTopColor: colors.lightGray }]}>
             <View style={styles.jobFooterContent}>
               <View style={styles.jobFooterSection}>
                 <Icon name="report-problem" size={18} color={colors.warmGray} />
-                <Text style={styles.jobFooterText}>Report this job</Text>
+                <Text style={[styles.jobFooterText, { color: colors.warmGray }]}>Report this job</Text>
               </View>
               
-              <View style={styles.jobFooterDividerVertical} />
+              <View style={[styles.jobFooterDividerVertical, { backgroundColor: colors.lightGray }]} />
               
               <View style={styles.jobFooterSection}>
                 <Icon name="info-outline" size={18} color={colors.warmGray} />
-                <Text style={styles.jobFooterText}>Job ID: {job.id.substring(0, 8)}</Text>
+                <Text style={[styles.jobFooterText, { color: colors.warmGray }]}>Job ID: {job.id.substring(0, 8)}</Text>
               </View>
             </View>
 
             <View style={styles.jobFooterBottom}>
-              <Text style={styles.jobFooterBottomText}>
+              <Text style={[styles.jobFooterBottomText, { color: colors.warmGray }]}>
                 Posted on NibJobs • {formatDate(job.createdAt)}
               </Text>
-              <Text style={styles.jobFooterBottomText}>
+              <Text style={[styles.jobFooterBottomText, { color: colors.warmGray }]}>
                 © 2024 NibJobs - Connecting Ethiopia's Talent with Opportunities
               </Text>
             </View>
 
             <View style={styles.jobFooterLinks}>
               <TouchableOpacity>
-                <Text style={styles.footerLinkText}>Privacy Policy</Text>
+                <Text style={[styles.footerLinkText, { color: colors.warmGray }]}>Privacy Policy</Text>
               </TouchableOpacity>
-              <Text style={styles.jobFooterLinkDivider}>•</Text>
+              <Text style={[styles.jobFooterLinkDivider, { color: colors.warmGray }]}>•</Text>
               <TouchableOpacity>
-                <Text style={styles.footerLinkText}>Terms of Service</Text>
+                <Text style={[styles.footerLinkText, { color: colors.warmGray }]}>Terms of Service</Text>
               </TouchableOpacity>
-              <Text style={styles.jobFooterLinkDivider}>•</Text>
+              <Text style={[styles.jobFooterLinkDivider, { color: colors.warmGray }]}>•</Text>
               <TouchableOpacity>
-                <Text style={styles.footerLinkText}>Contact Us</Text>
+                <Text style={[styles.footerLinkText, { color: colors.warmGray }]}>Contact Us</Text>
               </TouchableOpacity>
             </View>
           </View>
         </ScrollView>
         
         {/* Sticky Apply Button - Always Visible */}
-        <View style={styles.stickyApplyButton}>
+        <View style={[styles.stickyApplyButton, { backgroundColor: colors.white, borderTopColor: colors.lightGray }]}>
           <TouchableOpacity 
-            style={styles.jobDetailsApplyButton}
+            style={[styles.jobDetailsApplyButton, { backgroundColor: colors.beeYellow }]}
             onPress={handleApply}
           >
             <Image 
@@ -2079,23 +2002,23 @@ function JobDetailsScreen({ route, navigation }: any) {
               style={{ width: 22, height: 22 }}
               resizeMode="contain"
             />
-            <Text style={styles.jobDetailsApplyButtonText}>Apply on Telegram</Text>
+            <Text style={[styles.jobDetailsApplyButtonText, { color: isDarkMode ? '#000000' : colors.deepNavy }]}>Apply on Telegram</Text>
           </TouchableOpacity>
         </View>
       </View>
       
       {/* Related Jobs Sidebar - MOVED TO RIGHT SIDE */}
-      <ScrollView style={styles.relatedJobsSidebar} showsVerticalScrollIndicator={false}>
-        <View style={styles.relatedJobsSidebarHeader}>
+      <ScrollView style={[styles.relatedJobsSidebar, { backgroundColor: colors.cream }]} showsVerticalScrollIndicator={false}>
+        <View style={[styles.relatedJobsSidebarHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
           <Icon name="work-outline" size={20} color={colors.deepNavy} />
-          <Text style={styles.relatedJobsTitle}>Similar Jobs</Text>
+          <Text style={[styles.relatedJobsTitle, { color: colors.deepNavy }]}>Similar Jobs</Text>
         </View>
         
         {relatedJobs.length > 0 ? (
           relatedJobs.map((relatedJob: any) => (
             <TouchableOpacity
               key={relatedJob.id}
-              style={styles.relatedJobCard}
+              style={[styles.relatedJobCard, { backgroundColor: colors.white, borderColor: colors.lightGray }]}
               onPress={() => navigation.push('JobDetails', { id: relatedJob.id })}
             >
               {/* Company Logo/Icon */}
@@ -2107,13 +2030,13 @@ function JobDetailsScreen({ route, navigation }: any) {
                     resizeMode="cover"
                   />
                 ) : (
-                  <View style={styles.relatedJobIconPlaceholder}>
+                  <View style={[styles.relatedJobIconPlaceholder, { backgroundColor: colors.cream }]}>
                     <Icon name="business" size={16} color={colors.beeYellow} />
                   </View>
                 )}
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.relatedJobTitle} numberOfLines={2}>{relatedJob.title}</Text>
-                  <Text style={styles.relatedJobCompany} numberOfLines={1}>{relatedJob.company}</Text>
+                  <Text style={[styles.relatedJobTitle, { color: colors.deepNavy }]} numberOfLines={2}>{relatedJob.title}</Text>
+                  <Text style={[styles.relatedJobCompany, { color: colors.warmGray }]} numberOfLines={1}>{relatedJob.company}</Text>
                 </View>
               </View>
               
@@ -2122,19 +2045,19 @@ function JobDetailsScreen({ route, navigation }: any) {
                 {relatedJob.location && (
                   <View style={styles.relatedJobDetailItem}>
                     <Icon name="location-on" size={14} color={colors.danger} />
-                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.location}</Text>
+                    <Text style={[styles.relatedJobDetailText, { color: colors.warmGray }]} numberOfLines={1}>{relatedJob.location}</Text>
                   </View>
                 )}
                 {relatedJob.contractType && (
                   <View style={styles.relatedJobDetailItem}>
                     <Icon name="work-outline" size={14} color={colors.softBlue} />
-                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.contractType}</Text>
+                    <Text style={[styles.relatedJobDetailText, { color: colors.warmGray }]} numberOfLines={1}>{relatedJob.contractType}</Text>
                   </View>
                 )}
                 {relatedJob.experienceLevel && (
                   <View style={styles.relatedJobDetailItem}>
                     <Icon name="star-outline" size={14} color={colors.honeyGold} />
-                    <Text style={styles.relatedJobDetailText} numberOfLines={1}>{relatedJob.experienceLevel}</Text>
+                    <Text style={[styles.relatedJobDetailText, { color: colors.warmGray }]} numberOfLines={1}>{relatedJob.experienceLevel}</Text>
                   </View>
                 )}
               </View>
@@ -2142,13 +2065,13 @@ function JobDetailsScreen({ route, navigation }: any) {
               {/* Salary and Time */}
               <View style={styles.relatedJobFooter}>
                 {relatedJob.salary && (
-                  <View style={styles.relatedJobSalaryBadge}>
+                  <View style={[styles.relatedJobSalaryBadge, { backgroundColor: colors.cream }]}>
                     <Icon name="payments" size={12} color={colors.success} />
-                    <Text style={styles.relatedJobSalary} numberOfLines={1}>{relatedJob.salary}</Text>
+                    <Text style={[styles.relatedJobSalary, { color: colors.success }]} numberOfLines={1}>{relatedJob.salary}</Text>
                   </View>
                 )}
                 {relatedJob.postedDate && (
-                  <Text style={styles.relatedJobTime}>{getTimeAgo(relatedJob.postedDate || relatedJob.createdAt)}</Text>
+                  <Text style={[styles.relatedJobTime, { color: colors.warmGray }]}>{getTimeAgo(relatedJob.postedDate || relatedJob.createdAt)}</Text>
                 )}
               </View>
             </TouchableOpacity>
@@ -2156,8 +2079,8 @@ function JobDetailsScreen({ route, navigation }: any) {
         ) : (
           <View style={styles.relatedJobsEmpty}>
             <Icon name="work-off" size={48} color={colors.lightGray} />
-            <Text style={styles.relatedJobsEmptyText}>No related jobs found</Text>
-            <Text style={styles.relatedJobsEmptySubtext}>Check back later for similar opportunities</Text>
+            <Text style={[styles.relatedJobsEmptyText, { color: colors.warmGray }]}>No related jobs found</Text>
+            <Text style={[styles.relatedJobsEmptySubtext, { color: colors.warmGray }]}>Check back later for similar opportunities</Text>
           </View>
         )}
       </ScrollView>
@@ -2168,19 +2091,45 @@ function JobDetailsScreen({ route, navigation }: any) {
 }
 
 // Jobs Screen - For verified and active users
-function JobsScreen({ navigation }: any) {
+function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [categories, setCategories] = useState<any[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   
-  const colors = lightColors;
+  const colors = isDarkMode ? darkColors : lightColors;
 
   useEffect(() => {
     fetchJobs();
     fetchCategories();
-  }, []);
+    
+    // Set search text if passed from home page
+    if (route?.params?.searchQuery) {
+      setSearchText(route.params.searchQuery);
+    }
+
+    // Listen to auth state
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        // Fetch bookmarked jobs
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          setBookmarkedJobs(userDoc.data().bookmarkedJobs || []);
+        }
+      } else {
+        setUser(null);
+        setBookmarkedJobs([]);
+      }
+    });
+
+    return unsubscribe;
+  }, [route?.params?.searchQuery]);
 
   const fetchJobs = async () => {
     try {
@@ -2237,40 +2186,40 @@ function JobsScreen({ navigation }: any) {
 
   const renderJobCard = ({ item: job }: any) => (
     <TouchableOpacity 
-      style={styles.jobCard} 
+      style={[styles.jobCard, { backgroundColor: colors.white }]} 
       activeOpacity={0.8}
       onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
     >
       <View style={styles.jobCardHeader}>
-        <View style={styles.jobIconCircle}>
+        <View style={[styles.jobIconCircle, { backgroundColor: colors.cream }]}>
           <Icon name="work-outline" size={20} color={colors.beeYellow} />
         </View>
         {job.contractType && (
-          <View style={styles.jobTypeBadge}>
-            <Text style={styles.jobTypeBadgeText}>{job.contractType}</Text>
+          <View style={[styles.jobTypeBadge, { backgroundColor: colors.softBlue }]}>
+            <Text style={[styles.jobTypeBadgeText, { color: colors.white }]}>{job.contractType}</Text>
           </View>
         )}
       </View>
       
       <View style={styles.jobCardContent}>
-        <Text style={styles.jobTitle} numberOfLines={2}>{job.title || 'Job Title'}</Text>
-        <Text style={styles.jobCompany} numberOfLines={1}>{job.company || 'Company'}</Text>
+        <Text style={[styles.jobTitle, { color: colors.deepNavy }]} numberOfLines={2}>{job.title || 'Job Title'}</Text>
+        <Text style={[styles.jobCompany, { color: colors.warmGray }]} numberOfLines={1}>{job.company || 'Company'}</Text>
         
         {job.category && (
-          <View style={styles.jobCategoryBadge}>
+          <View style={[styles.jobCategoryBadge, { backgroundColor: colors.cream }]}>
             <Icon name="category" size={12} color={colors.softBlue} />
-            <Text style={styles.jobCategoryText} numberOfLines={1}>{job.category}</Text>
+            <Text style={[styles.jobCategoryText, { color: colors.softBlue }]} numberOfLines={1}>{job.category}</Text>
           </View>
         )}
         
         <View style={styles.jobMetaRow}>
           <View style={styles.jobMetaItem}>
             <Icon name="location-on" size={14} color={colors.warmGray} />
-            <Text style={styles.jobLocation} numberOfLines={1}>{job.location || 'Location'}</Text>
+            <Text style={[styles.jobLocation, { color: colors.warmGray }]} numberOfLines={1}>{job.location || 'Location'}</Text>
           </View>
           {job.isRemote && (
-            <View style={styles.remoteBadge}>
-              <Text style={styles.remoteBadgeText}>Remote</Text>
+            <View style={[styles.remoteBadge, { backgroundColor: colors.success }]}>
+              <Text style={[styles.remoteBadgeText, { color: colors.white }]}>Remote</Text>
             </View>
           )}
         </View>
@@ -2278,13 +2227,13 @@ function JobsScreen({ navigation }: any) {
         {job.salary && (
           <View style={styles.jobSalaryRow}>
             <Icon name="payments" size={14} color={colors.success} />
-            <Text style={styles.jobSalary} numberOfLines={1}>{job.salary}</Text>
+            <Text style={[styles.jobSalary, { color: colors.success }]} numberOfLines={1}>{job.salary}</Text>
           </View>
         )}
       </View>
       
-      <View style={styles.jobCardFooter}>
-        <Text style={styles.jobDate}>
+      <View style={[styles.jobCardFooter, { borderTopColor: colors.lightGray, backgroundColor: colors.white }]}>
+        <Text style={[styles.jobDate, { color: colors.warmGray }]}>
           {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
         </Text>
         <Icon name="arrow-forward" size={16} color={colors.beeYellow} />
@@ -2293,28 +2242,171 @@ function JobsScreen({ navigation }: any) {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <View style={styles.jobsPageHeader}>
-        <View style={styles.jobsPageHeaderLeft}>
-          <Image source={require('./assets/favicon.png')} style={styles.headerLogoImage} />
-          <Text style={styles.jobsPageTitle}>NibJobs</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      {/* Header Toolbar */}
+      <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Companies')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
+          </TouchableOpacity>
+          
+          {/* Search Bar */}
+          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.cream }]}>
+            <Icon name="search" size={18} color={colors.warmGray} />
+            <TextInput
+              style={[styles.toolbarSearchInput, { color: colors.deepNavy }]}
+              placeholder="Search jobs..."
+              placeholderTextColor={colors.warmGray}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+          
+          {/* Bookmark Icon */}
+          <TouchableOpacity 
+            style={styles.toolbarIconButton}
+            onPress={() => navigation.navigate('Bookmarks')}
+          >
+            <Icon name="bookmark-outline" size={24} color={colors.deepNavy} />
+            {bookmarkedJobs.length > 0 && (
+              <View style={[styles.bookmarkBadge, { backgroundColor: colors.beeYellow }]}>
+                <Text style={[styles.bookmarkBadgeText, { color: colors.deepNavy }]}>
+                  {bookmarkedJobs.length}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
+          
+          {/* Language Selector */}
+          <View style={styles.toolbarLanguageContainer}>
+            <TouchableOpacity 
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+            >
+              <Icon name="language" size={20} color={colors.deepNavy} />
+              <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
+                {selectedLanguage}
+              </Text>
+              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+            </TouchableOpacity>
+            
+            {showLanguageMenu && (
+              <View style={[styles.languageMenu, { backgroundColor: colors.white }]}>
+                {['English', 'Amharic', 'Oromifa'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={styles.languageMenuItem}
+                    onPress={() => {
+                      setSelectedLanguage(lang);
+                      setShowLanguageMenu(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.languageMenuItemText,
+                      { color: colors.deepNavy },
+                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
+                    ]}>
+                      {lang}
+                    </Text>
+                    {selectedLanguage === lang && (
+                      <Icon name="check" size={16} color={colors.beeYellow} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
         </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Icon name="logout" size={20} color={colors.deepNavy} />
-          <Text style={styles.logoutButtonText}>Logout</Text>
-        </TouchableOpacity>
+        
+        <View style={styles.jobsToolbarRight}>
+          {/* Theme Toggle Switch */}
+          <TouchableOpacity 
+            style={styles.toolbarThemeToggle}
+            onPress={toggleTheme}
+          >
+            <View style={[
+              styles.themeToggleTrack,
+              { backgroundColor: isDarkMode ? colors.deepNavy : colors.lightGray }
+            ]}>
+              <Icon 
+                name="wb-sunny" 
+                size={14} 
+                color={isDarkMode ? colors.warmGray : colors.beeYellow}
+                style={styles.themeToggleIconLeft}
+              />
+              <View style={[
+                styles.themeToggleKnob,
+                { backgroundColor: colors.white },
+                isDarkMode && styles.themeToggleKnobActive
+              ]}>
+                <Icon 
+                  name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} 
+                  size={12} 
+                  color={isDarkMode ? colors.deepNavy : colors.beeYellow}
+                />
+              </View>
+              <Icon 
+                name="nightlight-round" 
+                size={14} 
+                color={isDarkMode ? colors.beeYellow : colors.warmGray}
+                style={styles.themeToggleIconRight}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {user ? (
+            <>
+              <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
+                {user.email?.split('@')[0]}
+              </Text>
+              <TouchableOpacity 
+                style={styles.toolbarSettingsButton}
+                onPress={() => navigation.navigate('Settings')}
+              >
+                <Icon name="settings" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity 
+                style={[styles.toolbarLoginButton, { borderColor: colors.deepNavy }]}
+                onPress={() => navigation.navigate('Login')}
+              >
+                <Text style={[styles.toolbarLoginButtonText, { color: colors.deepNavy }]}>
+                  Login
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.toolbarSignupButton, { backgroundColor: colors.beeYellow }]}
+                onPress={() => navigation.navigate('Signup')}
+              >
+                <Text style={[styles.toolbarSignupButtonText, { color: colors.deepNavy }]}>
+                  Sign Up
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
-      <ScrollView style={styles.jobsPageContainer}>
+      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: colors.cream }]}>
         {/* Search and Filters */}
-        <View style={styles.jobsPageSearchSection}>
-          <Text style={styles.jobsPageMainTitle}>Find Your Dream Job</Text>
+        <View style={[styles.jobsPageSearchSection, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+          <Text style={[styles.jobsPageMainTitle, { color: colors.deepNavy }]}>Find Your Dream Job</Text>
           
-          <View style={styles.searchContainer}>
+          <View style={[styles.searchContainer, { backgroundColor: colors.cream }]}>
             <Icon name="search" size={20} color={colors.warmGray} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.deepNavy }]}
               placeholder="Search jobs by title, company, or location..."
               placeholderTextColor={colors.warmGray}
               value={searchText}
@@ -2331,13 +2423,15 @@ function JobsScreen({ navigation }: any) {
               <TouchableOpacity
                 style={[
                   styles.categoryFilterChip,
-                  !selectedCategory && styles.categoryFilterChipActive
+                  { backgroundColor: colors.cream, borderColor: colors.lightGray },
+                  !selectedCategory && { backgroundColor: colors.beeYellow, borderColor: colors.beeYellow }
                 ]}
                 onPress={() => setSelectedCategory('')}
               >
                 <Text style={[
                   styles.categoryFilterChipText,
-                  !selectedCategory && styles.categoryFilterChipTextActive
+                  { color: colors.deepNavy },
+                  !selectedCategory && { fontWeight: '600' }
                 ]}>
                   All
                 </Text>
@@ -2347,13 +2441,15 @@ function JobsScreen({ navigation }: any) {
                   key={category.id}
                   style={[
                     styles.categoryFilterChip,
-                    selectedCategory === category.name && styles.categoryFilterChipActive
+                    { backgroundColor: colors.cream, borderColor: colors.lightGray },
+                    selectedCategory === category.name && { backgroundColor: colors.beeYellow, borderColor: colors.beeYellow }
                   ]}
                   onPress={() => setSelectedCategory(category.name)}
                 >
                   <Text style={[
                     styles.categoryFilterChipText,
-                    selectedCategory === category.name && styles.categoryFilterChipTextActive
+                    { color: colors.deepNavy },
+                    selectedCategory === category.name && { fontWeight: '600' }
                   ]}>
                     {category.name}
                   </Text>
@@ -2368,13 +2464,13 @@ function JobsScreen({ navigation }: any) {
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={colors.beeYellow} />
-              <Text style={styles.loadingText}>Loading jobs...</Text>
+              <Text style={[styles.loadingText, { color: colors.deepNavy }]}>Loading jobs...</Text>
             </View>
           ) : filteredJobs.length === 0 ? (
             <View style={styles.emptyStateContainer}>
               <Icon name="work-off" size={64} color={colors.warmGray} />
-              <Text style={styles.emptyStateText}>No jobs found</Text>
-              <Text style={styles.emptyStateSubtext}>Try adjusting your filters</Text>
+              <Text style={[styles.emptyStateText, { color: colors.deepNavy }]}>No jobs found</Text>
+              <Text style={[styles.emptyStateSubtext, { color: colors.warmGray }]}>Try adjusting your filters</Text>
             </View>
           ) : (
             <FlatList
@@ -2388,6 +2484,835 @@ function JobsScreen({ navigation }: any) {
               columnWrapperStyle={styles.jobsGridRow}
             />
           )}
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Companies Screen (Placeholder)
+function CompaniesScreen({ navigation }: any) {
+  const colors = lightColors;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.settingsHeader}>
+        <TouchableOpacity 
+          style={styles.settingsBackButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={styles.settingsTitle}>Companies</Text>
+      </View>
+      <View style={styles.emptyStateContainer}>
+        <Icon name="business" size={64} color={colors.warmGray} />
+        <Text style={styles.emptyStateText}>Companies Coming Soon</Text>
+        <Text style={styles.emptyStateSubtext}>Browse companies and their job listings</Text>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// Bookmarks Screen (Placeholder)
+function BookmarksScreen({ navigation }: any) {
+  const [user, setUser] = useState<any>(null);
+  const [bookmarkedJobs, setBookmarkedJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const colors = lightColors;
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        // Fetch bookmarked jobs
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          const bookmarkedJobIds = userDoc.data().bookmarkedJobs || [];
+          // Fetch full job details for bookmarked jobs
+          const jobPromises = bookmarkedJobIds.map(async (jobId: string) => {
+            const jobDoc = await getDoc(doc(db, 'jobs', jobId));
+            if (jobDoc.exists()) {
+              return { id: jobDoc.id, ...jobDoc.data() };
+            }
+            return null;
+          });
+          const jobs = (await Promise.all(jobPromises)).filter(job => job !== null);
+          setBookmarkedJobs(jobs);
+        }
+      } else {
+        navigation.replace('Login');
+      }
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.settingsHeader}>
+        <TouchableOpacity 
+          style={styles.settingsBackButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={styles.settingsTitle}>Bookmarked Jobs</Text>
+      </View>
+      <ScrollView style={styles.settingsContainer}>
+        {loading ? (
+          <View style={styles.settingsLoadingContainer}>
+            <ActivityIndicator size="large" color={colors.beeYellow} />
+          </View>
+        ) : bookmarkedJobs.length === 0 ? (
+          <View style={styles.emptyStateContainer}>
+            <Icon name="bookmark-outline" size={64} color={colors.warmGray} />
+            <Text style={styles.emptyStateText}>No Bookmarked Jobs</Text>
+            <Text style={styles.emptyStateSubtext}>Save jobs to view them later</Text>
+          </View>
+        ) : (
+          <View style={styles.settingsSection}>
+            {bookmarkedJobs.map((job: any) => (
+              <TouchableOpacity
+                key={job.id}
+                style={styles.settingsCard}
+                onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+              >
+                <Text style={styles.categoryCardText}>{job.title}</Text>
+                <Text style={styles.settingsSectionSubtitle}>{job.company}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Settings Screen - Main Menu
+function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
+  const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        // Fetch user data
+        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+        if (userDoc.exists()) {
+          setUserData(userDoc.data());
+        }
+      } else {
+        navigation.replace('Login');
+      }
+      setLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  const settingsMenuItems = [
+    {
+      id: 'profile',
+      title: 'Profile',
+      subtitle: 'Display name, profile picture, date of birth',
+      icon: 'person',
+      screen: 'SettingsProfile',
+    },
+    {
+      id: 'appearance',
+      title: 'Appearance',
+      subtitle: 'Theme and display preferences',
+      icon: 'palette',
+      screen: 'SettingsAppearance',
+    },
+    {
+      id: 'language',
+      title: 'Language',
+      subtitle: userData?.language || 'English',
+      icon: 'language',
+      screen: 'SettingsLanguage',
+    },
+    {
+      id: 'interests',
+      title: 'Job Interests',
+      subtitle: 'Preferred job categories',
+      icon: 'work',
+      screen: 'SettingsInterests',
+    },
+    {
+      id: 'subscription',
+      title: 'Subscription Plan',
+      subtitle: userData?.subscriptionPlan || 'Free Plan',
+      icon: 'card-membership',
+      screen: 'SettingsSubscription',
+    },
+  ];
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      {/* Header */}
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity 
+          style={styles.settingsBackButton}
+          onPress={() => navigation.goBack()}
+        >
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Settings</Text>
+      </View>
+
+      {loading ? (
+        <View style={styles.settingsLoadingContainer}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+        </View>
+      ) : (
+        <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+          {/* Profile Card */}
+          <View style={styles.settingsSection}>
+            <View style={[styles.settingsProfileCard, { backgroundColor: colors.white }]}>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }} 
+                  style={styles.settingsProfileImage}
+                />
+              ) : (
+                <View style={[styles.settingsProfileImagePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={48} color={colors.deepNavy} />
+                </View>
+              )}
+              <View style={styles.settingsProfileInfo}>
+                <Text style={[styles.settingsProfileName, { color: colors.deepNavy }]}>
+                  {userData?.displayName || user?.email?.split('@')[0] || 'User'}
+                </Text>
+                <Text style={[styles.settingsProfileEmail, { color: colors.warmGray }]}>
+                  {user?.email}
+                </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Settings Menu Items */}
+          <View style={styles.settingsSection}>
+            {settingsMenuItems.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                style={[styles.settingsMenuItem, { backgroundColor: colors.white }]}
+                onPress={() => navigation.navigate(item.screen, { userData, user })}
+              >
+                <View style={[styles.settingsMenuIconContainer, { backgroundColor: colors.cream }]}>
+                  <Icon name={item.icon} size={24} color={colors.beeYellow} />
+                </View>
+                <View style={styles.settingsMenuContent}>
+                  <Text style={[styles.settingsMenuTitle, { color: colors.deepNavy }]}>
+                    {item.title}
+                  </Text>
+                  <Text style={[styles.settingsMenuSubtitle, { color: colors.warmGray }]}>
+                    {item.subtitle}
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={24} color={colors.warmGray} />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Logout Button */}
+          <View style={styles.settingsSection}>
+            <TouchableOpacity
+              style={[styles.settingsLogoutButton, { backgroundColor: colors.white, borderColor: colors.error }]}
+              onPress={async () => {
+                await signOut(auth);
+                navigation.replace('Home');
+              }}
+            >
+              <Icon name="logout" size={20} color={colors.error} />
+              <Text style={[styles.settingsLogoutButtonText, { color: colors.error }]}>
+                Logout
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
+      )}
+    </SafeAreaView>
+  );
+}
+
+// Settings Profile Sub-Screen
+function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
+  const { userData, user } = route.params;
+  const [displayName, setDisplayName] = useState(userData?.displayName || '');
+  const [dateOfBirth, setDateOfBirth] = useState(userData?.dateOfBirth || '');
+  const [profilePicture, setProfilePicture] = useState(userData?.profilePicture || '');
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  const pickImage = async () => {
+    try {
+      // Request permission
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Sorry, we need camera roll permissions to upload photos.');
+        return;
+      }
+
+      // Launch image picker
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploading(true);
+        await uploadImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const uploadImage = async (uri: string) => {
+    if (!user) return;
+
+    try {
+      // Fetch the image
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      // Create a reference to Firebase Storage
+      const filename = `profile_pictures/${user.uid}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, filename);
+
+      // Upload the image
+      await uploadBytes(storageRef, blob);
+
+      // Get the download URL
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      // Update the profile picture state
+      setProfilePicture(downloadURL);
+      
+      Alert.alert('Success', 'Photo uploaded successfully!');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload photo');
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        displayName,
+        dateOfBirth,
+        profilePicture,
+      });
+      Alert.alert('Success', 'Profile updated successfully!');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity style={styles.settingsBackButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Profile</Text>
+      </View>
+
+      <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+        <View style={styles.settingsSection}>
+          {/* Profile Picture */}
+          <View style={[styles.settingsInputGroup, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Profile Picture</Text>
+            <View style={styles.profilePictureContainer}>
+              {profilePicture ? (
+                <Image source={{ uri: profilePicture }} style={styles.profilePicturePreview} />
+              ) : (
+                <View style={[styles.profilePicturePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={64} color={colors.deepNavy} />
+                </View>
+              )}
+              
+              <TouchableOpacity 
+                style={[styles.uploadPhotoButton, { backgroundColor: colors.beeYellow }]}
+                onPress={pickImage}
+                disabled={uploading}
+              >
+                <Icon name="cloud-upload" size={20} color={colors.deepNavy} />
+                <Text style={[styles.uploadPhotoButtonText, { color: colors.deepNavy }]}>
+                  {uploading ? 'Uploading...' : 'Upload Photo'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Display Name */}
+          <View style={[styles.settingsInputGroup, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Display Name</Text>
+            <TextInput
+              style={[styles.settingsTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Enter your display name"
+              placeholderTextColor={colors.warmGray}
+              value={displayName}
+              onChangeText={setDisplayName}
+            />
+          </View>
+
+          {/* Date of Birth */}
+          <View style={[styles.settingsInputGroup, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Date of Birth</Text>
+            <TextInput
+              style={[styles.settingsTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.warmGray}
+              value={dateOfBirth}
+              onChangeText={setDateOfBirth}
+            />
+            <Text style={[styles.settingsInputHint, { color: colors.warmGray }]}>
+              Format: YYYY-MM-DD (e.g., 1990-01-15)
+            </Text>
+          </View>
+
+          {/* Email (Read-only) */}
+          <View style={[styles.settingsInputGroup, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Email</Text>
+            <TextInput
+              style={[styles.settingsTextInput, styles.settingsTextInputDisabled, { backgroundColor: colors.lightGray, color: colors.warmGray }]}
+              value={user?.email}
+              editable={false}
+            />
+          </View>
+        </View>
+
+        {/* Save Button */}
+        <TouchableOpacity 
+          style={[styles.settingsSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.settingsSaveButtonDisabled]}
+          onPress={saveProfile}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.deepNavy} />
+          ) : (
+            <Text style={[styles.settingsSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Settings Appearance Sub-Screen
+function SettingsAppearanceScreen({ navigation, isDarkMode, toggleTheme }: any) {
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity style={styles.settingsBackButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Appearance</Text>
+      </View>
+
+      <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Theme</Text>
+          
+          {/* Theme Toggle */}
+          <TouchableOpacity
+            style={[styles.settingsToggleItem, { backgroundColor: colors.white }]}
+            onPress={toggleTheme}
+          >
+            <View style={styles.settingsToggleLeft}>
+              <View style={[styles.settingsMenuIconContainer, { backgroundColor: colors.cream }]}>
+                <Icon name={isDarkMode ? 'dark-mode' : 'light-mode'} size={24} color={colors.beeYellow} />
+              </View>
+              <View>
+                <Text style={[styles.settingsToggleTitle, { color: colors.deepNavy }]}>
+                  Dark Mode
+                </Text>
+                <Text style={[styles.settingsToggleSubtitle, { color: colors.warmGray }]}>
+                  {isDarkMode ? 'Enabled' : 'Disabled'}
+                </Text>
+              </View>
+            </View>
+            <View style={[styles.toggleSwitch, isDarkMode && styles.toggleSwitchActive]}>
+              <View style={[styles.toggleKnob, isDarkMode && styles.toggleKnobActive]} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Settings Language Sub-Screen
+function SettingsLanguageScreen({ navigation, route, isDarkMode }: any) {
+  const { userData, user } = route.params;
+  const [selectedLanguage, setSelectedLanguage] = useState(userData?.language || 'English');
+  const [saving, setSaving] = useState(false);
+  
+  const colors = isDarkMode ? darkColors : lightColors;
+  const languages = ['English', 'Amharic', 'Oromifa'];
+
+  const saveLanguage = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        language: selectedLanguage,
+      });
+      Alert.alert('Success', 'Language preference saved!');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error saving language:', error);
+      Alert.alert('Error', 'Failed to save language preference');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity style={styles.settingsBackButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Language</Text>
+      </View>
+
+      <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Select Language</Text>
+          
+          {languages.map((lang) => (
+            <TouchableOpacity
+              key={lang}
+              style={[
+                styles.settingsSelectionItem,
+                { backgroundColor: colors.white },
+                selectedLanguage === lang && { borderColor: colors.beeYellow, borderWidth: 2 }
+              ]}
+              onPress={() => setSelectedLanguage(lang)}
+            >
+              <View style={styles.settingsSelectionLeft}>
+                <Icon name="language" size={24} color={selectedLanguage === lang ? colors.beeYellow : colors.warmGray} />
+                <Text style={[
+                  styles.settingsSelectionText,
+                  { color: colors.deepNavy },
+                  selectedLanguage === lang && { fontWeight: '600' }
+                ]}>
+                  {lang}
+                </Text>
+              </View>
+              {selectedLanguage === lang && (
+                <Icon name="check-circle" size={24} color={colors.beeYellow} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        {/* Save Button */}
+        <TouchableOpacity 
+          style={[styles.settingsSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.settingsSaveButtonDisabled]}
+          onPress={saveLanguage}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.deepNavy} />
+          ) : (
+            <Text style={[styles.settingsSaveButtonText, { color: colors.deepNavy }]}>Save Language</Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Settings Interests Sub-Screen
+function SettingsInterestsScreen({ navigation, route, isDarkMode }: any) {
+  const { userData, user } = route.params;
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(userData?.interestedCategories || []);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      setLoading(true);
+      const categoriesCollection = collection(db, 'categories');
+      const categoriesSnapshot = await getDocs(categoriesCollection);
+      const categoriesData = categoriesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      Alert.alert('Error', 'Failed to load categories');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleCategory = (categoryName: string) => {
+    if (selectedCategories.includes(categoryName)) {
+      setSelectedCategories(selectedCategories.filter(c => c !== categoryName));
+    } else {
+      setSelectedCategories([...selectedCategories, categoryName]);
+    }
+  };
+
+  const saveInterests = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        interestedCategories: selectedCategories
+      });
+      Alert.alert('Success', 'Your job interests have been saved!');
+      navigation.goBack();
+    } catch (error) {
+      console.error('Error saving interests:', error);
+      Alert.alert('Error', 'Failed to save interests');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity style={styles.settingsBackButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Job Interests</Text>
+      </View>
+
+      <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Interested Job Categories</Text>
+          <Text style={[styles.settingsSectionSubtitle, { color: colors.warmGray }]}>
+            Select categories to personalize your job recommendations
+          </Text>
+          
+          {loading ? (
+            <View style={styles.settingsLoadingContainer}>
+              <ActivityIndicator size="large" color={colors.beeYellow} />
+            </View>
+          ) : (
+            <View style={styles.categoriesGrid}>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.categoryCard,
+                    { backgroundColor: colors.white, borderColor: colors.lightGray },
+                    selectedCategories.includes(category.name) && { 
+                      borderColor: colors.beeYellow,
+                      backgroundColor: colors.cream 
+                    }
+                  ]}
+                  onPress={() => toggleCategory(category.name)}
+                >
+                  <View style={styles.categoryCardContent}>
+                    <Text style={[
+                      styles.categoryCardText,
+                      { color: colors.deepNavy },
+                      selectedCategories.includes(category.name) && { fontWeight: '600' }
+                    ]}>
+                      {category.name}
+                    </Text>
+                    {selectedCategories.includes(category.name) && (
+                      <Icon name="check-circle" size={20} color={colors.beeYellow} />
+                    )}
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Save Button */}
+        <TouchableOpacity 
+          style={[styles.settingsSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.settingsSaveButtonDisabled]}
+          onPress={saveInterests}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.deepNavy} />
+          ) : (
+            <Text style={[styles.settingsSaveButtonText, { color: colors.deepNavy }]}>Save Interests</Text>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Settings Subscription Sub-Screen
+function SettingsSubscriptionScreen({ navigation, route, isDarkMode }: any) {
+  const { userData, user } = route.params;
+  const currentPlan = userData?.subscriptionPlan || 'Free';
+  const colors = isDarkMode ? darkColors : lightColors;
+
+  const plans = [
+    {
+      id: 'free',
+      name: 'Free Plan',
+      price: '$0/month',
+      features: [
+        'Browse all jobs',
+        'Apply to unlimited jobs',
+        'Save up to 10 jobs',
+        'Basic job alerts',
+      ],
+    },
+    {
+      id: 'basic',
+      name: 'Basic Plan',
+      price: '$9.99/month',
+      features: [
+        'Everything in Free',
+        'Unlimited saved jobs',
+        'Priority job alerts',
+        'Resume builder access',
+        'Application tracking',
+      ],
+    },
+    {
+      id: 'premium',
+      name: 'Premium Plan',
+      price: '$19.99/month',
+      features: [
+        'Everything in Basic',
+        'Featured applicant status',
+        'Direct messaging with employers',
+        'Advanced analytics',
+        'Career coaching sessions',
+        'Resume review service',
+      ],
+    },
+  ];
+
+  const handleUpgrade = (planId: string) => {
+    Alert.alert(
+      'Upgrade Plan',
+      `Would you like to upgrade to ${plans.find(p => p.id === planId)?.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { 
+          text: 'Upgrade', 
+          onPress: async () => {
+            try {
+              await updateDoc(doc(db, 'users', user.uid), {
+                subscriptionPlan: planId,
+              });
+              Alert.alert('Success', 'Plan upgraded successfully!');
+              navigation.goBack();
+            } catch (error) {
+              console.error('Error upgrading plan:', error);
+              Alert.alert('Error', 'Failed to upgrade plan');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity style={styles.settingsBackButton} onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Subscription</Text>
+      </View>
+
+      <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Current Plan</Text>
+          <View style={[styles.currentPlanCard, { backgroundColor: colors.beeYellow }]}>
+            <Icon name="card-membership" size={32} color={colors.deepNavy} />
+            <Text style={[styles.currentPlanName, { color: colors.deepNavy }]}>
+              {plans.find(p => p.id === currentPlan.toLowerCase())?.name || 'Free Plan'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Available Plans</Text>
+          
+          {plans.map((plan) => (
+            <View
+              key={plan.id}
+              style={[
+                styles.planCard,
+                { backgroundColor: colors.white },
+                plan.id === currentPlan.toLowerCase() && { borderColor: colors.beeYellow, borderWidth: 2 }
+              ]}
+            >
+              <View style={styles.planHeader}>
+                <Text style={[styles.planName, { color: colors.deepNavy }]}>{plan.name}</Text>
+                <Text style={[styles.planPrice, { color: colors.beeYellow }]}>{plan.price}</Text>
+              </View>
+              
+              <View style={styles.planFeatures}>
+                {plan.features.map((feature, index) => (
+                  <View key={index} style={styles.planFeatureItem}>
+                    <Icon name="check" size={16} color={colors.success} />
+                    <Text style={[styles.planFeatureText, { color: colors.deepNavy }]}>{feature}</Text>
+                  </View>
+                ))}
+              </View>
+
+              {plan.id !== currentPlan.toLowerCase() && (
+                <TouchableOpacity
+                  style={[styles.planUpgradeButton, { backgroundColor: colors.beeYellow }]}
+                  onPress={() => handleUpgrade(plan.id)}
+                >
+                  <Text style={[styles.planUpgradeButtonText, { color: colors.deepNavy }]}>
+                    {plan.id === 'free' ? 'Downgrade' : 'Upgrade'}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              
+              {plan.id === currentPlan.toLowerCase() && (
+                <View style={[styles.planCurrentBadge, { backgroundColor: colors.cream }]}>
+                  <Text style={[styles.planCurrentBadgeText, { color: colors.beeYellow }]}>Current Plan</Text>
+                </View>
+              )}
+            </View>
+          ))}
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -4939,8 +5864,12 @@ function HomeScreen({ navigation }: any) {
   };
 
   const handleSearch = () => {
-    // Search is handled by useEffect when searchText changes
-    filterJobs();
+    // Navigate to Jobs page with search query
+    if (searchText.trim()) {
+      navigation.navigate('Jobs', { searchQuery: searchText });
+    } else {
+      navigation.navigate('Jobs');
+    }
   };
 
   const handleGooglePlayDownload = () => {
@@ -5270,7 +6199,7 @@ function HomeScreen({ navigation }: any) {
                   <Icon name="search" size={24} color={colors.warmGray} />
                   <TextInput
                     style={dynamicStyles.modernSearchInput}
-                    placeholder="Search jobs, companies, or skills..."
+                    placeholder="Search jobs"
                     value={searchText}
                     onChangeText={setSearchText}
                     onSubmitEditing={handleSearch}
@@ -6094,13 +7023,10 @@ export default function App() {
 
   if (initializing || !fontsLoaded || !themeLoaded) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <Image source={require('./assets/favicon.png')} style={styles.loadingLogoImage} />
-          <Text style={styles.loadingText}>NibJobs</Text>
-          <Text style={styles.loadingSubtext}>Loading...</Text>
-        </View>
-      </SafeAreaView>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: lightColors.beeYellow }}>
+        <ActivityIndicator size="large" color="#F4C430" />
+        <Text style={[styles.loadingSubtext, { marginTop: 16 }]}>Loading...</Text>
+      </View>
     );
   }
 
@@ -6114,6 +7040,14 @@ export default function App() {
         VerificationRequired: 'verification-required',
         ForgotPassword: 'forgot-password',
         Jobs: 'jobs',
+        Companies: 'companies',
+        Bookmarks: 'bookmarks',
+        Settings: 'settings',
+        SettingsProfile: 'settings/profile',
+        SettingsAppearance: 'settings/appearance',
+        SettingsLanguage: 'settings/language',
+        SettingsInterests: 'settings/interests',
+        SettingsSubscription: 'settings/subscription',
         JobDetails: 'job/:id',
         AdminPanel: 'admin',
         Privacy: 'privacy',
@@ -6144,6 +7078,30 @@ export default function App() {
         </Stack.Screen>
         <Stack.Screen name="Jobs">
           {(props) => <JobsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Companies">
+          {(props) => <CompaniesScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Bookmarks">
+          {(props) => <BookmarksScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="Settings">
+          {(props) => <SettingsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="SettingsProfile">
+          {(props) => <SettingsProfileScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="SettingsAppearance">
+          {(props) => <SettingsAppearanceScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="SettingsLanguage">
+          {(props) => <SettingsLanguageScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="SettingsInterests">
+          {(props) => <SettingsInterestsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="SettingsSubscription">
+          {(props) => <SettingsSubscriptionScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
         </Stack.Screen>
         <Stack.Screen name="JobDetails">
           {(props) => <JobDetailsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
@@ -6181,6 +7139,7 @@ const styles = StyleSheet.create({
   },
   loadingContainer: {
     flex: 1,
+    width: '100%',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: lightColors.beeYellow,
@@ -6416,6 +7375,561 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   // Jobs Page Styles
+  jobsToolbar: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: lightColors.lightGray,
+  },
+  jobsToolbarLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+  },
+  jobsToolbarRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  toolbarNavButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  toolbarNavButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  toolbarSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.cream,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    gap: 8,
+    flex: 1,
+    maxWidth: 400,
+  },
+  toolbarSearchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    outlineStyle: 'none',
+  },
+  toolbarIconButton: {
+    padding: 8,
+    position: 'relative',
+  },
+  bookmarkBadge: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  bookmarkBadgeText: {
+    fontSize: 10,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  toolbarLanguageContainer: {
+    position: 'relative',
+  },
+  toolbarLanguageButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: lightColors.cream,
+    borderRadius: 8,
+  },
+  toolbarLanguageText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  languageMenu: {
+    position: 'absolute',
+    top: 45,
+    right: 0,
+    backgroundColor: lightColors.white,
+    borderRadius: 8,
+    paddingVertical: 8,
+    minWidth: 150,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 1000,
+  },
+  languageMenuItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  languageMenuItemText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  languageMenuItemTextActive: {
+    color: lightColors.beeYellow,
+    fontWeight: '600',
+  },
+  toolbarUserName: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  toolbarSettingsButton: {
+    padding: 8,
+  },
+  toolbarLoginButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: lightColors.deepNavy,
+    borderRadius: 8,
+  },
+  toolbarLoginButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  toolbarSignupButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 8,
+  },
+  toolbarSignupButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  // Theme Toggle Switch Styles
+  toolbarThemeToggle: {
+    marginRight: 12,
+  },
+  themeToggleTrack: {
+    width: 64,
+    height: 28,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 4,
+    position: 'relative',
+  },
+  themeToggleIconLeft: {
+    position: 'absolute',
+    left: 6,
+    zIndex: 1,
+  },
+  themeToggleIconRight: {
+    position: 'absolute',
+    right: 6,
+    zIndex: 1,
+  },
+  themeToggleKnob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'absolute',
+    left: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    transition: 'left 0.2s ease',
+  },
+  themeToggleKnobActive: {
+    left: 38,
+  },
+  // Settings Screen Styles
+  settingsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    backgroundColor: lightColors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: lightColors.lightGray,
+    gap: 16,
+  },
+  settingsBackButton: {
+    padding: 8,
+  },
+  settingsTitle: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  settingsContainer: {
+    flex: 1,
+    backgroundColor: lightColors.cream,
+  },
+  settingsSection: {
+    padding: 24,
+  },
+  settingsSectionTitle: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+  },
+  settingsSectionSubtitle: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 16,
+  },
+  settingsCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingsUserEmail: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  settingsLoadingContainer: {
+    padding: 40,
+    alignItems: 'center',
+  },
+  categoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  categoryCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 16,
+    borderWidth: 2,
+    borderColor: lightColors.lightGray,
+    minWidth: 150,
+  },
+  categoryCardSelected: {
+    borderColor: lightColors.beeYellow,
+    backgroundColor: lightColors.cream,
+  },
+  categoryCardContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  categoryCardText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+  },
+  categoryCardTextSelected: {
+    color: lightColors.deepNavy,
+    fontWeight: '600',
+  },
+  settingsSaveButton: {
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 12,
+    padding: 16,
+    margin: 24,
+    alignItems: 'center',
+  },
+  settingsSaveButtonDisabled: {
+    opacity: 0.6,
+  },
+  settingsSaveButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    fontWeight: '600',
+  },
+  // New Settings Styles
+  settingsProfileCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 12,
+    gap: 16,
+  },
+  settingsProfileImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  settingsProfileImagePlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsProfileInfo: {
+    flex: 1,
+  },
+  settingsProfileName: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingsProfileEmail: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  settingsMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 12,
+  },
+  settingsMenuIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsMenuContent: {
+    flex: 1,
+  },
+  settingsMenuTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingsMenuSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+  },
+  settingsLogoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 8,
+  },
+  settingsLogoutButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  // Profile Settings Styles
+  settingsInputGroup: {
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  settingsInputLabel: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  settingsTextInput: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    padding: 12,
+    borderRadius: 8,
+    outlineStyle: 'none',
+  },
+  settingsTextInputDisabled: {
+    opacity: 0.6,
+  },
+  settingsInputHint: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    marginTop: 4,
+  },
+  profilePictureContainer: {
+    alignItems: 'center',
+    gap: 12,
+  },
+  profilePicturePreview: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+  },
+  profilePicturePlaceholder: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  uploadPhotoButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  uploadPhotoButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  // Appearance Settings Styles
+  settingsToggleItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  settingsToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingsToggleTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingsToggleSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+  },
+  toggleSwitch: {
+    width: 52,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: lightColors.lightGray,
+    padding: 2,
+    justifyContent: 'center',
+  },
+  toggleSwitchActive: {
+    backgroundColor: lightColors.beeYellow,
+  },
+  toggleKnob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: lightColors.white,
+  },
+  toggleKnobActive: {
+    marginLeft: 24,
+  },
+  // Language Settings Styles
+  settingsSelectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+  },
+  settingsSelectionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  settingsSelectionText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+  },
+  // Subscription Styles
+  currentPlanCard: {
+    padding: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 12,
+  },
+  currentPlanName: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  planCard: {
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  planHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  planName: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  planPrice: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+  },
+  planFeatures: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  planFeatureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  planFeatureText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  planUpgradeButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  planUpgradeButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  planCurrentBadge: {
+    padding: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  planCurrentBadgeText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
   jobsPageHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -7876,8 +9390,8 @@ const styles = StyleSheet.create({
     resizeMode: 'contain',
   },
   loadingLogoImage: {
-    width: 60,
-    height: 60,
+    width: 240,
+    height: 240,
     marginBottom: 16,
     resizeMode: 'contain',
   },
