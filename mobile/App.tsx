@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Alert, ScrollView, FlatList, Image, Animated, Dimensions, Linking, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Alert, ScrollView, FlatList, Image, ImageBackground, Animated, Dimensions, Linking, ActivityIndicator, Modal, Switch } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
@@ -44,6 +44,7 @@ const lightColors = {
   softBlue: '#4A90E2',
   success: '#27AE60',
   danger: '#E74C3C',
+  error: '#E74C3C',
   lightPeach: '#FFE5CC',
   // Modern sidebar colors
   sidebarBg: '#F8FAFC',        // Light gray-blue
@@ -69,6 +70,7 @@ const darkColors = {
   softBlue: '#60A5FA',
   success: '#10B981',
   danger: '#F87171',
+  error: '#F87171',
   lightPeach: '#3A2E28',
   // Modern sidebar colors (dark)
   sidebarBg: '#1F2937',
@@ -294,6 +296,12 @@ function LoginScreen({ navigation, route }: any) {
       if (userDoc.exists()) {
         const userData = userDoc.data();
         
+        console.log('User data from Firestore:', {
+          role: userData.role,
+          isVerified: userData.isVerified,
+          isActive: userData.isActive
+        });
+        
         // Update isVerified if it's false but email is verified
         if (!userData.isVerified && updatedUser.emailVerified) {
           await updateDoc(doc(db, 'users', user.uid), {
@@ -305,9 +313,11 @@ function LoginScreen({ navigation, route }: any) {
         
         // Check user role and redirect accordingly
         if (userData.role === 'superadmin') {
+          console.log('Navigating to AdminPanel');
           navigation.replace('AdminPanel');
         } else if (userData.isVerified && userData.isActive) {
           // Verified and active users go to Jobs page
+          console.log('Navigating to Jobs page');
           navigation.replace('Jobs');
         } else if (!userData.isActive) {
           Alert.alert('Account Inactive', 'Your account has been deactivated. Please contact support.');
@@ -317,6 +327,7 @@ function LoginScreen({ navigation, route }: any) {
           await signOut(auth);
         }
       } else {
+        console.error('User profile not found in Firestore');
         Alert.alert('Error', 'User profile not found');
         await signOut(auth);
       }
@@ -756,7 +767,7 @@ function ForgotPasswordScreen({ navigation }: any) {
 }
 
 // Signup Screen
-function SignupScreen({ navigation }: any) {
+function SignupScreen({ navigation, route }: any) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -764,6 +775,9 @@ function SignupScreen({ navigation }: any) {
   const [loading, setLoading] = useState(false);
   const [emailSent, setEmailSent] = useState(false);
   const [userEmail, setUserEmail] = useState('');
+  
+  // Get message from navigation params if available
+  const message = route?.params?.message;
 
   const handleSignup = async () => {
     if (!email || !password || !fullName) {
@@ -960,6 +974,30 @@ function SignupScreen({ navigation }: any) {
               <Text style={styles.loginSubtitle}>Create Your Account</Text>
             </View>
             
+            {message && (
+              <View style={{
+                backgroundColor: lightColors.beeYellow,
+                padding: 16,
+                marginHorizontal: 20,
+                marginBottom: 20,
+                borderRadius: 12,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+              }}>
+                <Icon name="info" size={24} color={lightColors.deepNavy} />
+                <Text style={{
+                  flex: 1,
+                  fontSize: 14,
+                  color: lightColors.deepNavy,
+                  fontFamily: 'Inter-Medium',
+                  lineHeight: 20,
+                }}>
+                  {message}
+                </Text>
+              </View>
+            )}
+            
             <View style={styles.loginForm}>
               <View style={styles.inputContainer}>
                 <View style={styles.inputGroup}>
@@ -1086,6 +1124,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
   const [loading, setLoading] = useState(true);
   const [isSaved, setIsSaved] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
   
   // Language states for toolbar
@@ -1113,14 +1152,17 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
         setUser(authUser);
-        // Fetch bookmarked jobs
+        // Fetch bookmarked jobs and user data
         const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
-          setBookmarkedJobs(userDoc.data().bookmarkedJobs || []);
-          setIsSaved(userDoc.data().bookmarkedJobs?.includes(id) || false);
+          const data = userDoc.data();
+          setUserData(data);
+          setBookmarkedJobs(data.bookmarkedJobs || []);
+          setIsSaved(data.bookmarkedJobs?.includes(id) || false);
         }
       } else {
         setUser(null);
+        setUserData(null);
         setBookmarkedJobs([]);
       }
     });
@@ -1326,6 +1368,13 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
       {/* Header Toolbar - Same as Jobs Page */}
       <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
         <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+            <Image 
+              source={require('./assets/favicon.png')}
+              style={styles.toolbarLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.toolbarNavButton}
             onPress={() => navigation.navigate('Jobs')}
@@ -1350,21 +1399,6 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
               onChangeText={setSearchText}
             />
           </View>
-          
-          {/* Bookmark Icon */}
-          <TouchableOpacity 
-            style={styles.toolbarIconButton}
-            onPress={() => navigation.navigate('Bookmarks')}
-          >
-            <Icon name="bookmark-outline" size={24} color={colors.deepNavy} />
-            {bookmarkedJobs.length > 0 && (
-              <View style={[styles.bookmarkBadge, { backgroundColor: colors.beeYellow }]}>
-                <Text style={[styles.bookmarkBadgeText, { color: colors.deepNavy }]}>
-                  {bookmarkedJobs.length}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
           
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
@@ -1445,6 +1479,16 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
 
           {user ? (
             <>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }}
+                  style={styles.toolbarProfilePicture}
+                />
+              ) : (
+                <View style={[styles.toolbarProfilePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={20} color={colors.deepNavy} />
+                </View>
+              )}
               <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
                 {user.email?.split('@')[0]}
               </Text>
@@ -1453,6 +1497,15 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
                 onPress={() => navigation.navigate('Settings')}
               >
                 <Icon name="settings" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.toolbarLogoutButton}
+                onPress={() => {
+                  signOut(auth);
+                  navigation.replace('Home');
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.danger} />
               </TouchableOpacity>
             </>
           ) : (
@@ -1482,105 +1535,113 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
         {/* Main Content with Sticky Apply Button */}
         <View style={{ flex: 1, position: 'relative' }}>
           <ScrollView style={[styles.jobDetailsContent, { backgroundColor: colors.cream }]} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 100 }}>
-          {/* Job Header Card */}
-          <View style={[styles.jobHeaderCard, { backgroundColor: colors.white }]}>
-            <View style={styles.jobHeaderTop}>
-              <View style={styles.jobDetailsIconContainer}>
+          {/* Job Header Card - Modern Enhanced Design */}
+          <View style={[styles.modernJobHeaderCard, { backgroundColor: colors.white }]}>
+            <View style={styles.modernJobHeaderTop}>
+              <View style={styles.modernJobDetailsIconContainer}>
                 {job.sourceImageUrl ? (
                   <Image
                     source={{ uri: job.sourceImageUrl }}
-                    style={styles.companyLogo}
+                    style={styles.modernCompanyLogo}
                     resizeMode="cover"
                   />
                 ) : (
-                  <View style={[styles.companyLogoPlaceholder, { backgroundColor: colors.cream }]}>
-                    <Icon name="business" size={48} color={colors.beeYellow} />
+                  <View style={[styles.modernCompanyLogoPlaceholder, { backgroundColor: colors.cream }]}>
+                    <Icon name="business" size={52} color={colors.beeYellow} />
                   </View>
                 )}
               </View>
-              <View style={styles.jobHeaderInfo}>
-                <Text style={[styles.jobDetailsTitle, { color: colors.deepNavy }]}>{job.title}</Text>
-                <Text style={[styles.jobDetailsCompany, { color: colors.warmGray }]}>{job.company}</Text>
-                <View style={styles.jobMetaRow}>
-                  <View style={styles.jobMetaItem}>
-                    <Icon name="schedule" size={14} color={colors.warmGray} />
-                    <Text style={[styles.jobPostedTime, { color: colors.warmGray }]}>{getTimeAgo(job.postedDate || job.createdAt)}</Text>
+              <View style={styles.modernJobHeaderInfo}>
+                <Text style={[styles.modernJobDetailsTitle, { color: colors.deepNavy }]}>{job.title}</Text>
+                <TouchableOpacity>
+                  <Text style={[styles.modernJobDetailsCompany, { color: colors.softBlue }]}>{job.company}</Text>
+                </TouchableOpacity>
+                <View style={styles.modernJobMetaRow}>
+                  <View style={styles.modernJobMetaItem}>
+                    <Icon name="schedule" size={16} color={colors.warmGray} />
+                    <Text style={[styles.modernJobPostedTime, { color: colors.warmGray }]}>{getTimeAgo(job.postedDate || job.createdAt)}</Text>
                   </View>
                   {job.location && (
-                    <View style={styles.jobMetaItem}>
-                      <Icon name="location-on" size={14} color={colors.danger} />
-                      <Text style={[styles.jobPostedTime, { color: colors.warmGray }]}>{job.location}</Text>
+                    <View style={styles.modernJobMetaItem}>
+                      <Icon name="location-on" size={16} color={colors.danger} />
+                      <Text style={[styles.modernJobPostedTime, { color: colors.warmGray }]}>{job.location}</Text>
                     </View>
                   )}
                 </View>
               </View>
             </View>
             
-            {/* Badges */}
-            <View style={styles.jobDetailsBadges}>
+            {/* Modern Badges */}
+            <View style={styles.modernJobDetailsBadges}>
               {job.contractType && (
-                <View style={[styles.jobDetailsBadge, { backgroundColor: colors.cream }]}>
-                  <Icon name="description" size={14} color={colors.softBlue} />
-                  <Text style={[styles.jobDetailsBadgeText, { color: colors.deepNavy }]}>{job.contractType}</Text>
+                <View style={[styles.modernJobDetailsBadge, { backgroundColor: colors.cream, borderColor: colors.softBlue }]}>
+                  <Icon name="description" size={15} color={colors.softBlue} />
+                  <Text style={[styles.modernJobDetailsBadgeText, { color: colors.deepNavy }]}>{job.contractType}</Text>
                 </View>
               )}
               {job.isRemote && (
-                <View style={[styles.jobDetailsBadge, styles.remoteBadgeLarge, { backgroundColor: colors.cream }]}>
-                  <Icon name="home-work" size={14} color={colors.success} />
-                  <Text style={[styles.remoteBadgeTextLarge, { color: colors.success }]}>Remote</Text>
+                <View style={[styles.modernJobDetailsBadge, { backgroundColor: colors.cream, borderColor: colors.success }]}>
+                  <Icon name="home-work" size={15} color={colors.success} />
+                  <Text style={[styles.modernJobDetailsBadgeText, { color: colors.success }]}>Remote</Text>
                 </View>
               )}
               {job.experienceLevel && (
-                <View style={[styles.jobDetailsBadge, { backgroundColor: colors.cream }]}>
-                  <Icon name="military-tech" size={14} color={colors.honeyGold} />
-                  <Text style={[styles.jobDetailsBadgeText, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
+                <View style={[styles.modernJobDetailsBadge, { backgroundColor: colors.cream, borderColor: colors.honeyGold }]}>
+                  <Icon name="military-tech" size={15} color={colors.honeyGold} />
+                  <Text style={[styles.modernJobDetailsBadgeText, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
                 </View>
               )}
               {job.category && (
-                <View style={[styles.jobDetailsBadge, styles.categoryBadgeLarge, { backgroundColor: colors.cream }]}>
-                  <Icon name="category" size={14} color={colors.softBlue} />
-                  <Text style={[styles.categoryBadgeTextLarge, { color: colors.deepNavy }]}>{job.category}</Text>
+                <View style={[styles.modernJobDetailsBadge, { backgroundColor: colors.cream, borderColor: colors.softBlue }]}>
+                  <Icon name="category" size={15} color={colors.softBlue} />
+                  <Text style={[styles.modernJobDetailsBadgeText, { color: colors.deepNavy }]}>{job.category}</Text>
                 </View>
               )}
             </View>
 
-            {/* Quick Stats */}
+            {/* Enhanced Quick Stats */}
             {(job.applicants || job.views) && (
-              <View style={[styles.quickStatsContainer, { backgroundColor: colors.cream }]}>
+              <View style={[styles.modernQuickStatsContainer, { backgroundColor: colors.cream }]}>
                 {job.applicants && (
-                  <View style={styles.quickStat}>
-                    <Icon name="people" size={18} color={colors.softBlue} />
-                    <Text style={[styles.quickStatText, { color: colors.deepNavy }]}>{job.applicants} applicants</Text>
+                  <View style={styles.modernQuickStat}>
+                    <View style={[styles.modernStatIconCircle, { backgroundColor: colors.white }]}>
+                      <Icon name="people" size={18} color={colors.softBlue} />
+                    </View>
+                    <Text style={[styles.modernQuickStatText, { color: colors.deepNavy }]}>{job.applicants} applicants</Text>
                   </View>
                 )}
                 {job.views && (
-                  <View style={styles.quickStat}>
-                    <Icon name="visibility" size={18} color={colors.warmGray} />
-                    <Text style={[styles.quickStatText, { color: colors.deepNavy }]}>{job.views} views</Text>
+                  <View style={styles.modernQuickStat}>
+                    <View style={[styles.modernStatIconCircle, { backgroundColor: colors.white }]}>
+                      <Icon name="visibility" size={18} color={colors.warmGray} />
+                    </View>
+                    <Text style={[styles.modernQuickStatText, { color: colors.deepNavy }]}>{job.views} views</Text>
                   </View>
                 )}
               </View>
             )}
             
-            {/* Job Matching Score (if user is logged in) */}
+            {/* Enhanced Job Matching Score */}
             {auth.currentUser && job.matchScore && (
-              <View style={[styles.matchScoreCard, { backgroundColor: colors.cream }]}>
-                <View style={styles.matchScoreHeader}>
-                  <View style={styles.matchScoreLeft}>
-                    <Icon name="stars" size={24} color={colors.beeYellow} />
+              <View style={[styles.modernMatchScoreCard, { backgroundColor: colors.cream }]}>
+                <View style={styles.modernMatchScoreHeader}>
+                  <View style={styles.modernMatchScoreLeft}>
+                    <View style={[styles.modernStatIconCircle, { backgroundColor: colors.white }]}>
+                      <Icon name="stars" size={22} color={colors.beeYellow} />
+                    </View>
                     <View>
-                      <Text style={[styles.matchScoreTitle, { color: colors.deepNavy }]}>Job Match</Text>
-                      <Text style={[styles.matchScoreSubtitle, { color: colors.warmGray }]}>Based on your profile</Text>
+                      <Text style={[styles.modernMatchScoreTitle, { color: colors.deepNavy }]}>Job Match</Text>
+                      <Text style={[styles.modernMatchScoreSubtitle, { color: colors.warmGray }]}>Based on your profile</Text>
                     </View>
                   </View>
-                  <View style={[styles.matchScoreBadge, { backgroundColor: colors.beeYellow }]}>
-                    <Text style={[styles.matchScorePercentage, { color: colors.deepNavy }]}>{job.matchScore}%</Text>
+                  <View style={[styles.modernMatchScoreBadge, { backgroundColor: colors.beeYellow }]}>
+                    <Text style={[styles.modernMatchScorePercentage, { color: colors.deepNavy }]}>{job.matchScore}%</Text>
                   </View>
                 </View>
-                <View style={[styles.matchScoreBar, { backgroundColor: colors.lightGray }]}>
-                  <View style={[styles.matchScoreProgress, { width: `${job.matchScore}%`, backgroundColor: colors.beeYellow }]} />
+                <View style={[styles.modernMatchScoreBar, { backgroundColor: colors.lightGray }]}>
+                  <View style={[styles.modernMatchScoreProgress, { width: `${job.matchScore}%`, backgroundColor: colors.beeYellow }]} />
                 </View>
-                <Text style={[styles.matchScoreDescription, { color: colors.warmGray }]}>
+                <Text style={[styles.modernMatchScoreDescription, { color: colors.warmGray }]}>
                   {job.matchScore >= 80 ? 'Excellent match! Your skills align well with this position.' :
                    job.matchScore >= 60 ? 'Good match. Consider applying to strengthen your profile.' :
                    'Moderate match. You may need additional skills for this role.'}
@@ -1588,177 +1649,197 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
               </View>
             )}
 
-            {/* Salary Highlight (if available) */}
+            {/* Enhanced Salary Highlight */}
             {job.salary && (
-              <View style={[styles.salaryHighlight, { backgroundColor: colors.cream }]}>
-                <Icon name="attach-money" size={24} color={colors.success} />
-                <Text style={[styles.salaryHighlightText, { color: colors.success }]}>{job.salary}</Text>
+              <View style={[styles.modernSalaryHighlight, { backgroundColor: '#e8f5e9' }]}>
+                <View style={[styles.modernStatIconCircle, { backgroundColor: colors.white }]}>
+                  <Icon name="attach-money" size={22} color={colors.success} />
+                </View>
+                <Text style={[styles.modernSalaryHighlightText, { color: colors.success }]}>{job.salary}</Text>
               </View>
             )}
           </View>
 
-          {/* Job Description - MOVED TO TOP */}
+          {/* Job Description - Modern Enhanced Section */}
           {job.description && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="description" size={18} color={colors.deepNavy} /> Job Description
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.description}</Text>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="description" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Job Description</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.modernJobDetailsDescription, { color: colors.warmGray }]}>{job.description}</Text>
               </View>
             </View>
           )}
 
-          {/* Key Information Grid */}
-          <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-            <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-              <Icon name="info" size={18} color={colors.deepNavy} /> Key Information
-            </Text>
-            <View style={[styles.jobDetailsInfoSection, { backgroundColor: colors.cream }]}>
+          {/* Key Information Grid - Modern Enhanced */}
+          <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <View style={styles.modernSectionHeaderContainer}>
+              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <Icon name="info" size={20} color={colors.deepNavy} />
+              </View>
+              <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Key Information</Text>
+            </View>
+            <View style={[styles.modernJobDetailsInfoSection, { backgroundColor: colors.cream }]}>
               {job.salary && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="payments" size={24} color={colors.success} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#e8f5e9' }]}>
+                    <Icon name="payments" size={26} color={colors.success} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Salary Range</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.salary}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Salary Range</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.salary}</Text>
                   </View>
                 </View>
               )}
 
               {job.location && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="location-on" size={24} color={colors.danger} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#ffebee' }]}>
+                    <Icon name="location-on" size={26} color={colors.danger} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Location</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.location}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Location</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.location}</Text>
                   </View>
                 </View>
               )}
 
               {job.isRemote !== undefined && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="home-work" size={24} color={colors.success} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#e8f5e9' }]}>
+                    <Icon name="home-work" size={26} color={colors.success} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Work Model</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.isRemote ? 'Remote' : 'On-site'}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Work Model</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.isRemote ? 'Remote' : 'On-site'}</Text>
                   </View>
                 </View>
               )}
               
-              <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                  <Icon name="calendar-today" size={24} color={colors.softBlue} />
+              <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                <View style={[styles.modernInfoCardIcon, { backgroundColor: '#e3f2fd' }]}>
+                  <Icon name="calendar-today" size={26} color={colors.softBlue} />
                 </View>
-                <View style={styles.jobDetailsInfoContent}>
-                  <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Posted Date</Text>
-                  <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.postedDate || job.createdAt)}</Text>
+                <View style={styles.modernJobDetailsInfoContent}>
+                  <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Posted Date</Text>
+                  <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.postedDate || job.createdAt)}</Text>
                 </View>
               </View>
 
               {job.deadline && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="event" size={24} color={colors.danger} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#ffebee' }]}>
+                    <Icon name="event" size={26} color={colors.danger} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Application Deadline</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.deadline)}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Application Deadline</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{formatDate(job.deadline)}</Text>
                   </View>
                 </View>
               )}
 
               {job.jobType && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="work" size={24} color={colors.honeyGold} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#fff8e1' }]}>
+                    <Icon name="work" size={26} color={colors.honeyGold} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Job Type</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.jobType}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Job Type</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.jobType}</Text>
                   </View>
                 </View>
               )}
 
               {job.experienceLevel && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="school" size={24} color={colors.softBlue} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#e3f2fd' }]}>
+                    <Icon name="school" size={26} color={colors.softBlue} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Experience Level</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Experience Level</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.experienceLevel}</Text>
                   </View>
                 </View>
               )}
 
               {job.education && (
-                <View style={[styles.jobDetailsInfoCard, { backgroundColor: colors.white }]}>
-                  <View style={[styles.infoCardIcon, { backgroundColor: colors.cream }]}>
-                    <Icon name="school" size={24} color={colors.honeyGold} />
+                <View style={[styles.modernJobDetailsInfoCard, { backgroundColor: colors.white }]}>
+                  <View style={[styles.modernInfoCardIcon, { backgroundColor: '#fff8e1' }]}>
+                    <Icon name="school" size={26} color={colors.honeyGold} />
                   </View>
-                  <View style={styles.jobDetailsInfoContent}>
-                    <Text style={[styles.jobDetailsInfoLabel, { color: colors.warmGray }]}>Education</Text>
-                    <Text style={[styles.jobDetailsInfoValue, { color: colors.deepNavy }]}>{job.education}</Text>
+                  <View style={styles.modernJobDetailsInfoContent}>
+                    <Text style={[styles.modernJobDetailsInfoLabel, { color: colors.warmGray }]}>Education</Text>
+                    <Text style={[styles.modernJobDetailsInfoValue, { color: colors.deepNavy }]}>{job.education}</Text>
                   </View>
                 </View>
               )}
             </View>
           </View>
 
-          {/* About the Company */}
+          {/* About the Company - Modern Enhanced */}
           {job.companyDescription && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="business" size={18} color={colors.deepNavy} /> About {job.company}
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.companyDescription}</Text>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="business" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>About {job.company}</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.modernJobDetailsDescription, { color: colors.warmGray }]}>{job.companyDescription}</Text>
               </View>
             </View>
           )}
 
-          {/* Requirements */}
+          {/* Requirements - Modern Enhanced */}
           {job.requirements && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="checklist" size={18} color={colors.deepNavy} /> Requirements
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.requirements}</Text>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="checklist" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Requirements</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.modernJobDetailsDescription, { color: colors.warmGray }]}>{job.requirements}</Text>
               </View>
             </View>
           )}
 
-          {/* Responsibilities */}
+          {/* Responsibilities - Modern Enhanced */}
           {job.responsibilities && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="assignment" size={18} color={colors.deepNavy} /> Responsibilities
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.responsibilities}</Text>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="assignment" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Responsibilities</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.modernJobDetailsDescription, { color: colors.warmGray }]}>{job.responsibilities}</Text>
               </View>
             </View>
           )}
 
-          {/* Benefits & Perks */}
+          {/* Benefits & Perks - Modern Enhanced */}
           {job.benefits && job.benefits.length > 0 && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="card-giftcard" size={18} color={colors.deepNavy} /> Benefits & Perks
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <View style={styles.benefitsList}>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="card-giftcard" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Benefits & Perks</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <View style={styles.modernBenefitsList}>
                   {job.benefits.map((benefit: string, index: number) => (
-                    <View key={index} style={styles.benefitItem}>
-                      <Icon name="check-circle" size={18} color={colors.success} />
-                      <Text style={[styles.benefitText, { color: colors.deepNavy }]}>{benefit}</Text>
+                    <View key={index} style={styles.modernBenefitItem}>
+                      <Icon name="check-circle" size={20} color={colors.success} />
+                      <Text style={[styles.modernBenefitText, { color: colors.deepNavy }]}>{benefit}</Text>
                     </View>
                   ))}
                 </View>
@@ -1766,18 +1847,21 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
             </View>
           )}
 
-          {/* Required Skills */}
+          {/* Required Skills - Modern Enhanced */}
           {job.requiredSkills && job.requiredSkills.length > 0 && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="emoji-objects" size={18} color={colors.deepNavy} /> Required Skills
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <View style={styles.jobTagsContainer}>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="emoji-objects" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Required Skills</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <View style={styles.modernJobTagsContainer}>
                   {job.requiredSkills.map((skill: string, index: number) => (
-                    <View key={index} style={[styles.skillTag, { backgroundColor: colors.cream, borderColor: colors.success }]}>
-                      <Icon name="check-circle" size={14} color={colors.success} />
-                      <Text style={[styles.skillTagText, { color: colors.deepNavy }]}>{skill}</Text>
+                    <View key={index} style={[styles.modernSkillTag, { backgroundColor: '#e8f5e9', borderColor: colors.success }]}>
+                      <Icon name="check-circle" size={15} color={colors.success} />
+                      <Text style={[styles.modernSkillTagText, { color: colors.deepNavy }]}>{skill}</Text>
                     </View>
                   ))}
                 </View>
@@ -1785,18 +1869,21 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
             </View>
           )}
 
-          {/* Nice to Have Skills */}
+          {/* Nice to Have Skills - Modern Enhanced */}
           {job.preferredSkills && job.preferredSkills.length > 0 && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="star-outline" size={18} color={colors.deepNavy} /> Nice to Have
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <View style={styles.jobTagsContainer}>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="star-outline" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Nice to Have</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <View style={styles.modernJobTagsContainer}>
                   {job.preferredSkills.map((skill: string, index: number) => (
-                    <View key={index} style={[styles.preferredSkillTag, { backgroundColor: colors.cream, borderColor: colors.honeyGold }]}>
-                      <Icon name="star-border" size={14} color={colors.honeyGold} />
-                      <Text style={[styles.preferredSkillTagText, { color: colors.deepNavy }]}>{skill}</Text>
+                    <View key={index} style={[styles.modernPreferredSkillTag, { backgroundColor: '#fff8e1', borderColor: colors.honeyGold }]}>
+                      <Icon name="star-border" size={15} color={colors.honeyGold} />
+                      <Text style={[styles.modernPreferredSkillTagText, { color: colors.deepNavy }]}>{skill}</Text>
                     </View>
                   ))}
                 </View>
@@ -1804,17 +1891,20 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
             </View>
           )}
 
-          {/* Tags */}
+          {/* Tags - Modern Enhanced */}
           {job.tags && job.tags.length > 0 && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="local-offer" size={18} color={colors.deepNavy} /> Tags
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <View style={styles.jobTagsContainer}>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="local-offer" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Tags</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <View style={styles.modernJobTagsContainer}>
                   {job.tags.map((tag: string, index: number) => (
-                    <View key={index} style={[styles.jobTag, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
-                      <Text style={[styles.jobTagText, { color: colors.deepNavy }]}>{tag}</Text>
+                    <View key={index} style={[styles.modernJobTag, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+                      <Text style={[styles.modernJobTagText, { color: colors.deepNavy }]}>{tag}</Text>
                     </View>
                   ))}
                 </View>
@@ -1822,12 +1912,15 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
             </View>
           )}
 
-          {/* Job Source & Activity - Merged */}
-          <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-            <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-              <Icon name="info" size={18} color={colors.deepNavy} /> Job Source & Activity
-            </Text>
-            <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
+          {/* Job Source & Activity - Modern Enhanced */}
+          <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+            <View style={styles.modernSectionHeaderContainer}>
+              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <Icon name="info" size={20} color={colors.deepNavy} />
+              </View>
+              <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Job Source & Activity</Text>
+            </View>
+            <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
               {/* Application Activity Stats */}
               {(job.recentApplicants || job.viewsLast24h) && (
                 <View style={{ marginBottom: 16 }}>
@@ -1900,14 +1993,17 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
             </View>
           </View>
 
-          {/* Application Process */}
+          {/* Application Process - Modern Enhanced */}
           {job.applicationProcess && (
-            <View style={[styles.jobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
-              <Text style={[styles.jobDetailsSectionHeader, { color: colors.deepNavy }]}>
-                <Icon name="how-to-reg" size={18} color={colors.deepNavy} /> Application Process
-              </Text>
-              <View style={[styles.contentCard, { backgroundColor: colors.white }]}>
-                <Text style={[styles.jobDetailsDescription, { color: colors.warmGray }]}>{job.applicationProcess}</Text>
+            <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+              <View style={styles.modernSectionHeaderContainer}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name="how-to-reg" size={20} color={colors.deepNavy} />
+                </View>
+                <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Application Process</Text>
+              </View>
+              <View style={[styles.modernContentCard, { backgroundColor: colors.white }]}>
+                <Text style={[styles.modernJobDetailsDescription, { color: colors.warmGray }]}>{job.applicationProcess}</Text>
               </View>
             </View>
           )}
@@ -1991,10 +2087,10 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           </View>
         </ScrollView>
         
-        {/* Sticky Apply Button - Always Visible */}
-        <View style={[styles.stickyApplyButton, { backgroundColor: colors.white, borderTopColor: colors.lightGray }]}>
+        {/* Modern Sticky Apply Button - Deep Navy CTA */}
+        <View style={[styles.modernStickyApplyButton, { backgroundColor: colors.white, borderTopColor: colors.lightGray }]}>
           <TouchableOpacity 
-            style={[styles.jobDetailsApplyButton, { backgroundColor: colors.beeYellow }]}
+            style={[styles.modernJobDetailsApplyButton, { backgroundColor: colors.deepNavy }]}
             onPress={handleApply}
           >
             <Image 
@@ -2002,7 +2098,8 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
               style={{ width: 22, height: 22 }}
               resizeMode="contain"
             />
-            <Text style={[styles.jobDetailsApplyButtonText, { color: isDarkMode ? '#000000' : colors.deepNavy }]}>Apply on Telegram</Text>
+            <Text style={[styles.modernJobDetailsApplyButtonText, { color: colors.white }]}>Apply on Telegram</Text>
+            <Icon name="arrow-forward" size={20} color={colors.white} />
           </TouchableOpacity>
         </View>
       </View>
@@ -2096,17 +2193,43 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
+  const [selectedJobType, setSelectedJobType] = useState('');
+  const [selectedRemote, setSelectedRemote] = useState('');
   const [categories, setCategories] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalJobs, setTotalJobs] = useState(0);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [firstVisible, setFirstVisible] = useState<any>(null);
+  const [pageCache, setPageCache] = useState<Map<number, any>>(new Map());
+  
+  // Collapsible filter states
+  const [employmentTypeExpanded, setEmploymentTypeExpanded] = useState(true);
+  const [workModeExpanded, setWorkModeExpanded] = useState(true);
+  
+  // View mode state for grid/list toggle
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  
+  const jobsPerPage = 12;
   
   const colors = isDarkMode ? darkColors : lightColors;
 
   useEffect(() => {
-    fetchJobs();
-    fetchCategories();
+    const initializeScreen = async () => {
+      try {
+        await fetchTotalCount();
+        await fetchJobs(1);
+        await fetchCategories();
+      } catch (error) {
+        console.error('Error initializing Jobs screen:', error);
+      }
+    };
+
+    initializeScreen();
     
     // Set search text if passed from home page
     if (route?.params?.searchQuery) {
@@ -2117,13 +2240,20 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
         setUser(authUser);
-        // Fetch bookmarked jobs
-        const userDoc = await getDoc(doc(db, 'users', authUser.uid));
-        if (userDoc.exists()) {
-          setBookmarkedJobs(userDoc.data().bookmarkedJobs || []);
+        // Fetch bookmarked jobs and user data
+        try {
+          const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUserData(data);
+            setBookmarkedJobs(data.bookmarkedJobs || []);
+          }
+        } catch (error) {
+          console.error('Error fetching bookmarked jobs:', error);
         }
       } else {
         setUser(null);
+        setUserData(null);
         setBookmarkedJobs([]);
       }
     });
@@ -2131,20 +2261,195 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
     return unsubscribe;
   }, [route?.params?.searchQuery]);
 
-  const fetchJobs = async () => {
+  const handleToggleBookmark = async (jobId: string) => {
+    if (!user) {
+      Alert.alert('Authentication Required', 'Please login to bookmark jobs');
+      navigation.navigate('Login');
+      return;
+    }
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userRef);
+      const currentBookmarks = userDoc.data()?.bookmarkedJobs || [];
+      
+      if (currentBookmarks.includes(jobId)) {
+        // Remove bookmark
+        await updateDoc(userRef, {
+          bookmarkedJobs: currentBookmarks.filter((id: string) => id !== jobId)
+        });
+        setBookmarkedJobs(currentBookmarks.filter((id: string) => id !== jobId));
+      } else {
+        // Add bookmark
+        await updateDoc(userRef, {
+          bookmarkedJobs: [...currentBookmarks, jobId]
+        });
+        setBookmarkedJobs([...currentBookmarks, jobId]);
+      }
+    } catch (error) {
+      console.error('Error toggling bookmark:', error);
+      Alert.alert('Error', 'Failed to update bookmark');
+    }
+  };
+
+  // Refetch when filters change
+  useEffect(() => {
+    if (loading) return; // Don't refetch if initial load is still happening
+    
+    const refetchWithFilters = async () => {
+      try {
+        setCurrentPage(1);
+        setPageCache(new Map());
+        await fetchTotalCount();
+        await fetchJobs(1);
+      } catch (error) {
+        console.error('Error refetching with filters:', error);
+      }
+    };
+
+    refetchWithFilters();
+  }, [searchText, selectedCategory, selectedJobType, selectedRemote]);
+
+  const fetchTotalCount = async () => {
+    try {
+      const jobsCollection = collection(db, 'jobs');
+      let countQuery = dbQuery(jobsCollection);
+
+      // Apply filters
+      if (selectedCategory) {
+        countQuery = dbQuery(countQuery, where('category', '==', selectedCategory));
+      }
+      if (selectedJobType) {
+        countQuery = dbQuery(countQuery, where('contractType', '==', selectedJobType));
+      }
+      if (selectedRemote === 'Remote') {
+        countQuery = dbQuery(countQuery, where('isRemote', '==', true));
+      } else if (selectedRemote === 'On-site') {
+        countQuery = dbQuery(countQuery, where('isRemote', '==', false));
+      }
+
+      const snapshot = await getDocs(countQuery);
+      
+      // Apply search filter in memory (since Firestore doesn't support text search)
+      let filteredCount = snapshot.docs;
+      if (searchText) {
+        filteredCount = snapshot.docs.filter(doc => {
+          const data = doc.data();
+          return (
+            data.title?.toLowerCase().includes(searchText.toLowerCase()) ||
+            data.company?.toLowerCase().includes(searchText.toLowerCase()) ||
+            data.location?.toLowerCase().includes(searchText.toLowerCase())
+          );
+        });
+      }
+      
+      setTotalJobs(filteredCount.length);
+    } catch (error) {
+      console.error('Error fetching total count:', error);
+    }
+  };
+
+  const fetchJobs = async (page: number, direction: 'next' | 'prev' | 'direct' = 'direct') => {
     try {
       setLoading(true);
+
+      // Check cache first
+      if (pageCache.has(page)) {
+        const cachedData = pageCache.get(page);
+        setJobs(cachedData.jobs);
+        setFirstVisible(cachedData.firstVisible);
+        setLastVisible(cachedData.lastVisible);
+        setCurrentPage(page);
+        setLoading(false);
+        return;
+      }
+
       const jobsCollection = collection(db, 'jobs');
-      const jobsQuery = dbQuery(jobsCollection, orderBy('createdAt', 'desc'), limit(50));
+      
+      // Build the base query with filters - where clauses must come before orderBy
+      let queryConstraints: any[] = [];
+      
+      if (selectedCategory) {
+        queryConstraints.push(where('category', '==', selectedCategory));
+      }
+      if (selectedJobType) {
+        queryConstraints.push(where('contractType', '==', selectedJobType));
+      }
+      if (selectedRemote === 'Remote') {
+        queryConstraints.push(where('isRemote', '==', true));
+      } else if (selectedRemote === 'On-site') {
+        queryConstraints.push(where('isRemote', '==', false));
+      }
+
+      // Add orderBy after where clauses
+      queryConstraints.push(orderBy('createdAt', 'desc'));
+
+      // Apply pagination
+      if (direction === 'next' && lastVisible) {
+        queryConstraints.push(startAfter(lastVisible));
+        queryConstraints.push(limit(jobsPerPage));
+      } else if (direction === 'prev' && firstVisible) {
+        queryConstraints.push(startAfter(firstVisible));
+        queryConstraints.push(limit(jobsPerPage));
+      } else {
+        const skip = (page - 1) * jobsPerPage;
+        queryConstraints.push(limit(skip + jobsPerPage));
+      }
+
+      let jobsQuery = dbQuery(jobsCollection, ...queryConstraints);
+
       const jobsSnapshot = await getDocs(jobsQuery);
-      const jobsData = jobsSnapshot.docs.map(doc => ({
+      let jobsData = jobsSnapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
-      setJobs(jobsData);
+
+      // For direct navigation, skip to the correct page
+      if (direction === 'direct' && page > 1) {
+        const skip = (page - 1) * jobsPerPage;
+        jobsData = jobsData.slice(skip);
+      }
+
+      // Apply search filter in memory (since Firestore doesn't support full-text search)
+      if (searchText) {
+        jobsData = jobsData.filter(job =>
+          job.title?.toLowerCase().includes(searchText.toLowerCase()) ||
+          job.company?.toLowerCase().includes(searchText.toLowerCase()) ||
+          job.location?.toLowerCase().includes(searchText.toLowerCase())
+        );
+      }
+
+      // Take only the required number of jobs
+      const paginatedJobs = jobsData.slice(0, jobsPerPage);
+
+      // Store pagination cursors
+      if (jobsSnapshot.docs.length > 0) {
+        const relevantDocs = jobsSnapshot.docs.slice(
+          direction === 'direct' && page > 1 ? (page - 1) * jobsPerPage : 0,
+          direction === 'direct' && page > 1 ? (page - 1) * jobsPerPage + jobsPerPage : jobsPerPage
+        );
+        
+        if (relevantDocs.length > 0) {
+          setFirstVisible(relevantDocs[0]);
+          setLastVisible(relevantDocs[relevantDocs.length - 1]);
+
+          // Cache this page
+          const newCache = new Map(pageCache);
+          newCache.set(page, {
+            jobs: paginatedJobs,
+            firstVisible: relevantDocs[0],
+            lastVisible: relevantDocs[relevantDocs.length - 1]
+          });
+          setPageCache(newCache);
+        }
+      }
+
+      setJobs(paginatedJobs);
+      setCurrentPage(page);
     } catch (error) {
       console.error('Error fetching jobs:', error);
-      Alert.alert('Error', 'Failed to load jobs');
+      // Don't show alert, just log the error and set empty jobs
+      setJobs([]);
     } finally {
       setLoading(false);
     }
@@ -2173,79 +2478,162 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
     }
   };
 
-  const filteredJobs = jobs.filter(job => {
-    const matchesSearch = !searchText || 
-      job.title?.toLowerCase().includes(searchText.toLowerCase()) ||
-      job.company?.toLowerCase().includes(searchText.toLowerCase()) ||
-      job.location?.toLowerCase().includes(searchText.toLowerCase());
-    
-    const matchesCategory = !selectedCategory || job.category === selectedCategory;
-    
-    return matchesSearch && matchesCategory;
-  });
+  // Pagination calculations
+  const totalPages = Math.ceil(totalJobs / jobsPerPage);
+  const startIndex = (currentPage - 1) * jobsPerPage;
+  const endIndex = Math.min(startIndex + jobsPerPage, totalJobs);
 
-  const renderJobCard = ({ item: job }: any) => (
-    <TouchableOpacity 
-      style={[styles.jobCard, { backgroundColor: colors.white }]} 
-      activeOpacity={0.8}
-      onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
-    >
-      <View style={styles.jobCardHeader}>
-        <View style={[styles.jobIconCircle, { backgroundColor: colors.cream }]}>
-          <Icon name="work-outline" size={20} color={colors.beeYellow} />
+  const handlePageChange = (page: number) => {
+    if (page === currentPage + 1) {
+      fetchJobs(page, 'next');
+    } else if (page === currentPage - 1) {
+      fetchJobs(page, 'prev');
+    } else {
+      fetchJobs(page, 'direct');
+    }
+  };
+
+  const renderJobCard = ({ item: job }: any) => {
+    const isFeatured = job.featured || Math.random() > 0.7; // Mock featured status
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.modernJobCard, 
+          { backgroundColor: colors.white },
+          viewMode === 'list' && styles.modernJobCardList,
+          isFeatured && styles.featuredJobCard
+        ]} 
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+      >
+        {/* Featured Badge */}
+        {isFeatured && (
+          <View style={[styles.featuredBadge, { backgroundColor: colors.beeYellow }]}>
+            <Icon name="star" size={14} color={colors.deepNavy} />
+            <Text style={[styles.featuredBadgeText, { color: colors.deepNavy }]}>Featured</Text>
+          </View>
+        )}
+
+        {/* Card Header with Company Logo and Bookmark */}
+        <View style={styles.modernCardHeader}>
+          {job.sourceImageUrl ? (
+            <Image
+              source={{ uri: job.sourceImageUrl }}
+              style={[styles.companyLogo, { backgroundColor: colors.cream }]}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.companyLogo, { backgroundColor: colors.deepNavy }]}>
+              <Text style={[styles.companyLogoText, { color: colors.white }]}>
+                {job.company?.charAt(0)?.toUpperCase() || 'C'}
+              </Text>
+            </View>
+          )}
+          <View style={styles.cardHeaderActions}>
+            <TouchableOpacity 
+              style={[styles.bookmarkButton, { backgroundColor: colors.cream }]}
+              onPress={(e) => {
+                e.stopPropagation();
+                handleToggleBookmark(job.id);
+              }}
+            >
+              <Icon 
+                name={bookmarkedJobs.includes(job.id) ? "bookmark" : "bookmark-outline"} 
+                size={18} 
+                color={bookmarkedJobs.includes(job.id) ? colors.beeYellow : colors.deepNavy} 
+              />
+            </TouchableOpacity>
+          </View>
         </View>
-        {job.contractType && (
-          <View style={[styles.jobTypeBadge, { backgroundColor: colors.softBlue }]}>
-            <Text style={[styles.jobTypeBadgeText, { color: colors.white }]}>{job.contractType}</Text>
+
+        {/* Job Title and Company */}
+        <View style={styles.modernCardBody}>
+          <Text style={[styles.modernJobTitle, { color: colors.deepNavy }]} numberOfLines={2}>
+            {job.title || 'Job Title'}
+          </Text>
+          <TouchableOpacity onPress={(e) => e.stopPropagation()}>
+            <Text style={[styles.modernCompanyName, { color: colors.warmGray }]} numberOfLines={1}>
+              {job.company || 'Company Name'}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Tags Row */}
+          <View style={styles.tagsRow}>
+            {job.contractType && (
+              <View style={[styles.modernTag, { backgroundColor: colors.softBlue + '20', borderColor: colors.softBlue }]}>
+                <Icon name="schedule" size={12} color={colors.softBlue} />
+                <Text style={[styles.modernTagText, { color: colors.softBlue }]}>{job.contractType}</Text>
+              </View>
+            )}
+            {job.isRemote && (
+              <View style={[styles.modernTag, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+                <Icon name="home-work" size={12} color={colors.success} />
+                <Text style={[styles.modernTagText, { color: colors.success }]}>Remote</Text>
+              </View>
+            )}
+            {job.category && (
+              <View style={[styles.modernTag, { backgroundColor: colors.cream, borderColor: colors.warmGray + '40' }]}>
+                <Text style={[styles.modernTagText, { color: colors.warmGray }]} numberOfLines={1}>{job.category}</Text>
+              </View>
+            )}
           </View>
-        )}
-      </View>
-      
-      <View style={styles.jobCardContent}>
-        <Text style={[styles.jobTitle, { color: colors.deepNavy }]} numberOfLines={2}>{job.title || 'Job Title'}</Text>
-        <Text style={[styles.jobCompany, { color: colors.warmGray }]} numberOfLines={1}>{job.company || 'Company'}</Text>
-        
-        {job.category && (
-          <View style={[styles.jobCategoryBadge, { backgroundColor: colors.cream }]}>
-            <Icon name="category" size={12} color={colors.softBlue} />
-            <Text style={[styles.jobCategoryText, { color: colors.softBlue }]} numberOfLines={1}>{job.category}</Text>
+
+          {/* Location and Salary */}
+          <View style={styles.modernMetaRow}>
+            <View style={styles.modernMetaItem}>
+              <Icon name="location-on" size={16} color={colors.warmGray} />
+              <Text style={[styles.modernMetaText, { color: colors.warmGray }]} numberOfLines={1}>
+                {job.location || 'Location'}
+              </Text>
+            </View>
           </View>
-        )}
-        
-        <View style={styles.jobMetaRow}>
-          <View style={styles.jobMetaItem}>
-            <Icon name="location-on" size={14} color={colors.warmGray} />
-            <Text style={[styles.jobLocation, { color: colors.warmGray }]} numberOfLines={1}>{job.location || 'Location'}</Text>
-          </View>
-          {job.isRemote && (
-            <View style={[styles.remoteBadge, { backgroundColor: colors.success }]}>
-              <Text style={[styles.remoteBadgeText, { color: colors.white }]}>Remote</Text>
+          
+          {job.salary && (
+            <View style={[styles.salarySection, { backgroundColor: colors.success + '10' }]}>
+              <Icon name="payments" size={16} color={colors.success} />
+              <Text style={[styles.salaryText, { color: colors.success }]} numberOfLines={1}>
+                {job.salary}
+              </Text>
             </View>
           )}
         </View>
-        
-        {job.salary && (
-          <View style={styles.jobSalaryRow}>
-            <Icon name="payments" size={14} color={colors.success} />
-            <Text style={[styles.jobSalary, { color: colors.success }]} numberOfLines={1}>{job.salary}</Text>
+
+        {/* Card Footer */}
+        <View style={[styles.modernCardFooter, { borderTopColor: colors.lightGray }]}>
+          <View style={styles.jobDateContainer}>
+            <Icon name="access-time" size={14} color={colors.warmGray} />
+            <Text style={[styles.modernJobDate, { color: colors.warmGray }]}>
+              {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent'}
+            </Text>
           </View>
-        )}
-      </View>
-      
-      <View style={[styles.jobCardFooter, { borderTopColor: colors.lightGray, backgroundColor: colors.white }]}>
-        <Text style={[styles.jobDate, { color: colors.warmGray }]}>
-          {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString() : 'Recently'}
-        </Text>
-        <Icon name="arrow-forward" size={16} color={colors.beeYellow} />
-      </View>
-    </TouchableOpacity>
-  );
+          <TouchableOpacity 
+            style={[styles.modernApplyButton, { backgroundColor: colors.deepNavy }]}
+            onPress={(e) => {
+              e.stopPropagation();
+              navigation.navigate('JobDetails', { id: job.id, job });
+            }}
+          >
+            <Text style={[styles.modernApplyText, { color: colors.white }]}>Apply Now</Text>
+            <Icon name="arrow-forward" size={16} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
       {/* Header Toolbar */}
       <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
         <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+            <Image 
+              source={require('./assets/favicon.png')}
+              style={styles.toolbarLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
           <TouchableOpacity 
             style={styles.toolbarNavButton}
             onPress={() => navigation.navigate('Jobs')}
@@ -2258,6 +2646,15 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           >
             <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
           </TouchableOpacity>
+          {user && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, styles.toolbarBookmarksButton]}
+              onPress={() => navigation.navigate('Bookmarks')}
+            >
+              <Icon name="bookmark" size={18} color={colors.beeYellow} />
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, marginLeft: 4 }]}>Bookmarks</Text>
+            </TouchableOpacity>
+          )}
           
           {/* Search Bar */}
           <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.cream }]}>
@@ -2270,21 +2667,6 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
               onChangeText={setSearchText}
             />
           </View>
-          
-          {/* Bookmark Icon */}
-          <TouchableOpacity 
-            style={styles.toolbarIconButton}
-            onPress={() => navigation.navigate('Bookmarks')}
-          >
-            <Icon name="bookmark-outline" size={24} color={colors.deepNavy} />
-            {bookmarkedJobs.length > 0 && (
-              <View style={[styles.bookmarkBadge, { backgroundColor: colors.beeYellow }]}>
-                <Text style={[styles.bookmarkBadgeText, { color: colors.deepNavy }]}>
-                  {bookmarkedJobs.length}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
           
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
@@ -2365,6 +2747,16 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
 
           {user ? (
             <>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }}
+                  style={styles.toolbarProfilePicture}
+                />
+              ) : (
+                <View style={[styles.toolbarProfilePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={20} color={colors.deepNavy} />
+                </View>
+              )}
               <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
                 {user.email?.split('@')[0]}
               </Text>
@@ -2373,6 +2765,15 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                 onPress={() => navigation.navigate('Settings')}
               >
                 <Icon name="settings" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.toolbarLogoutButton}
+                onPress={() => {
+                  signOut(auth);
+                  navigation.replace('Home');
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.danger} />
               </TouchableOpacity>
             </>
           ) : (
@@ -2399,91 +2800,473 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
       </View>
 
       <ScrollView style={[styles.jobsPageContainer, { backgroundColor: colors.cream }]}>
-        {/* Search and Filters */}
-        <View style={[styles.jobsPageSearchSection, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
-          <Text style={[styles.jobsPageMainTitle, { color: colors.deepNavy }]}>Find Your Dream Job</Text>
-          
-          <View style={[styles.searchContainer, { backgroundColor: colors.cream }]}>
-            <Icon name="search" size={20} color={colors.warmGray} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.deepNavy }]}
-              placeholder="Search jobs by title, company, or location..."
-              placeholderTextColor={colors.warmGray}
-              value={searchText}
-              onChangeText={setSearchText}
-            />
+        {/* Hero Section with Search */}
+        <View style={[styles.jobsHeroSection, { backgroundColor: colors.deepNavy }]}>
+          {/* Decorative Background Elements */}
+          <View style={styles.heroBackgroundDecor}>
+            <View style={[styles.heroCircle1, { backgroundColor: colors.beeYellow + '15' }]} />
+            <View style={[styles.heroCircle2, { backgroundColor: colors.softBlue + '15' }]} />
           </View>
+          
+          <View style={styles.jobsHeroContent}>
+            <View style={styles.heroTextContainer}>
+              <Text style={[styles.jobsHeroTitle, { color: colors.white }]}>
+                Discover Your Next Career Move
+              </Text>
+              <Text style={[styles.jobsHeroSubtitle, { color: colors.cream }]}>
+                {totalJobs.toLocaleString()} opportunities from top companies worldwide
+              </Text>
+            </View>
+            
+            {/* Enhanced Search Bar */}
+            <View style={[styles.heroSearchContainer, { backgroundColor: colors.white }]}>
+              <View style={styles.searchIconContainer}>
+                <Icon name="search" size={24} color={colors.deepNavy} />
+              </View>
+              <TextInput
+                style={[styles.heroSearchInput, { color: colors.deepNavy }]}
+                placeholder="Job title, keywords, or company..."
+                placeholderTextColor={colors.warmGray}
+                value={searchText}
+                onChangeText={setSearchText}
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity 
+                  onPress={() => setSearchText('')}
+                  style={styles.searchClearButton}
+                >
+                  <Icon name="close" size={20} color={colors.warmGray} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={[styles.searchButton, { backgroundColor: colors.deepNavy }]}>
+                <Text style={[styles.searchButtonText, { color: colors.white }]}>Search</Text>
+              </TouchableOpacity>
+            </View>
 
-          {categories.length > 0 && (
+            {/* Quick Stats with Icons */}
+            <View style={styles.statsRow}>
+              <View style={styles.statItem}>
+                <View style={[styles.statIconCircle, { backgroundColor: colors.beeYellow + '20' }]}>
+                  <Icon name="work" size={24} color={colors.beeYellow} />
+                </View>
+                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>{totalJobs}</Text>
+                <Text style={[styles.statLabel, { color: colors.cream }]}>Active Jobs</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIconCircle, { backgroundColor: colors.softBlue + '20' }]}>
+                  <Icon name="category" size={24} color={colors.softBlue} />
+                </View>
+                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>{categories.length}</Text>
+                <Text style={[styles.statLabel, { color: colors.cream }]}>Categories</Text>
+              </View>
+              <View style={styles.statDivider} />
+              <View style={styles.statItem}>
+                <View style={[styles.statIconCircle, { backgroundColor: colors.success + '20' }]}>
+                  <Icon name="business" size={24} color={colors.success} />
+                </View>
+                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>500+</Text>
+                <Text style={[styles.statLabel, { color: colors.cream }]}>Companies</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Category Pills */}
+        {categories.length > 0 && (
+          <View style={[styles.categoriesSection, { backgroundColor: colors.white }]}>
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
-              style={styles.categoriesScrollView}
+              contentContainerStyle={styles.categoriesScrollContent}
             >
               <TouchableOpacity
                 style={[
-                  styles.categoryFilterChip,
+                  styles.categoryPill,
                   { backgroundColor: colors.cream, borderColor: colors.lightGray },
-                  !selectedCategory && { backgroundColor: colors.beeYellow, borderColor: colors.beeYellow }
+                  !selectedCategory && { backgroundColor: colors.deepNavy }
                 ]}
                 onPress={() => setSelectedCategory('')}
               >
+                <Icon name="apps" size={16} color={!selectedCategory ? colors.white : colors.deepNavy} />
                 <Text style={[
-                  styles.categoryFilterChipText,
+                  styles.categoryPillText,
                   { color: colors.deepNavy },
-                  !selectedCategory && { fontWeight: '600' }
+                  !selectedCategory && { color: colors.white, fontWeight: '600' }
                 ]}>
-                  All
+                  All Jobs
                 </Text>
               </TouchableOpacity>
               {categories.map((category) => (
                 <TouchableOpacity
                   key={category.id}
                   style={[
-                    styles.categoryFilterChip,
+                    styles.categoryPill,
                     { backgroundColor: colors.cream, borderColor: colors.lightGray },
-                    selectedCategory === category.name && { backgroundColor: colors.beeYellow, borderColor: colors.beeYellow }
+                    selectedCategory === category.name && { backgroundColor: colors.deepNavy }
                   ]}
                   onPress={() => setSelectedCategory(category.name)}
                 >
                   <Text style={[
-                    styles.categoryFilterChipText,
+                    styles.categoryPillText,
                     { color: colors.deepNavy },
-                    selectedCategory === category.name && { fontWeight: '600' }
+                    selectedCategory === category.name && { color: colors.white, fontWeight: '600' }
                   ]}>
                     {category.name}
                   </Text>
                 </TouchableOpacity>
               ))}
             </ScrollView>
-          )}
-        </View>
+          </View>
+        )}
 
-        {/* Jobs Grid */}
-        <View style={styles.jobsPageJobsSection}>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.beeYellow} />
-              <Text style={[styles.loadingText, { color: colors.deepNavy }]}>Loading jobs...</Text>
+        {/* Main Content Area with Sidebar */}
+        <View style={styles.jobsContentWithSidebar}>
+          {/* Filter Sidebar */}
+          <View style={[styles.filterSidebar, { backgroundColor: colors.white }]}>
+            <View style={styles.filterHeader}>
+              <Icon name="tune" size={24} color={colors.deepNavy} />
+              <Text style={[styles.filterTitle, { color: colors.deepNavy }]}>Filters</Text>
             </View>
-          ) : filteredJobs.length === 0 ? (
-            <View style={styles.emptyStateContainer}>
-              <Icon name="work-off" size={64} color={colors.warmGray} />
-              <Text style={[styles.emptyStateText, { color: colors.deepNavy }]}>No jobs found</Text>
-              <Text style={[styles.emptyStateSubtext, { color: colors.warmGray }]}>Try adjusting your filters</Text>
+
+            {/* Clear All Filters */}
+            {(selectedJobType || selectedRemote) && (
+              <TouchableOpacity 
+                style={[styles.clearFiltersButton, { backgroundColor: colors.softBlue + '15' }]}
+                onPress={() => {
+                  setSelectedJobType('');
+                  setSelectedRemote('');
+                }}
+              >
+                <Icon name="clear-all" size={16} color={colors.softBlue} />
+                <Text style={[styles.clearFiltersText, { color: colors.softBlue }]}>Clear all filters</Text>
+              </TouchableOpacity>
+            )}
+            
+            {/* Employment Type Filter - Enhanced */}
+            <View style={styles.filterGroup}>
+              <TouchableOpacity 
+                style={styles.filterGroupHeader}
+                onPress={() => setEmploymentTypeExpanded(!employmentTypeExpanded)}
+              >
+                <View style={styles.filterGroupTitleContainer}>
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: colors.softBlue + '20' }]}>
+                    <Icon name="work" size={18} color={colors.softBlue} />
+                  </View>
+                  <Text style={[styles.filterGroupTitle, { color: colors.deepNavy }]}>Employment Type</Text>
+                </View>
+                <View style={[styles.expandIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon 
+                    name={employmentTypeExpanded ? "expand-less" : "expand-more"} 
+                    size={20} 
+                    color={colors.deepNavy} 
+                  />
+                </View>
+              </TouchableOpacity>
+              {employmentTypeExpanded && (
+                <View style={styles.filterOptions}>
+                  {[
+                    { label: 'All Types', value: '', icon: 'work-outline' },
+                    { label: 'Full-time', value: 'Full-time', icon: 'work' },
+                    { label: 'Part-time', value: 'Part-time', icon: 'schedule' },
+                    { label: 'Contract', value: 'Contract', icon: 'description' },
+                    { label: 'Freelance', value: 'Freelance', icon: 'laptop' },
+                    { label: 'Internship', value: 'Internship', icon: 'school' }
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.filterOption,
+                        { backgroundColor: colors.white },
+                        selectedJobType === option.value && [
+                          styles.filterOptionActive,
+                          { backgroundColor: colors.deepNavy, borderColor: colors.deepNavy }
+                        ]
+                      ]}
+                      onPress={() => setSelectedJobType(option.value)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.filterOptionIconCircle,
+                        { backgroundColor: selectedJobType === option.value ? colors.white + '20' : colors.softBlue + '15' }
+                      ]}>
+                        <Icon 
+                          name={option.icon} 
+                          size={16} 
+                          color={selectedJobType === option.value ? colors.white : colors.softBlue} 
+                        />
+                      </View>
+                      <Text style={[
+                        styles.filterOptionText,
+                        { color: colors.deepNavy },
+                        selectedJobType === option.value && { color: colors.white, fontFamily: fonts.bold }
+                      ]}>
+                        {option.label}
+                      </Text>
+                      {selectedJobType === option.value && (
+                        <View style={[styles.checkmarkCircle, { backgroundColor: colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={colors.deepNavy} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
             </View>
-          ) : (
-            <FlatList
-              data={filteredJobs}
-              renderItem={renderJobCard}
-              keyExtractor={(item) => item.id}
-              numColumns={3}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={styles.jobsGrid}
-              scrollEnabled={false}
-              columnWrapperStyle={styles.jobsGridRow}
-            />
-          )}
+
+            {/* Work Model Filter - Enhanced */}
+            <View style={styles.filterGroup}>
+              <TouchableOpacity 
+                style={styles.filterGroupHeader}
+                onPress={() => setWorkModeExpanded(!workModeExpanded)}
+              >
+                <View style={styles.filterGroupTitleContainer}>
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: colors.success + '20' }]}>
+                    <Icon name="home-work" size={18} color={colors.success} />
+                  </View>
+                  <Text style={[styles.filterGroupTitle, { color: colors.deepNavy }]}>Work Mode</Text>
+                </View>
+                <View style={[styles.expandIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon 
+                    name={workModeExpanded ? "expand-less" : "expand-more"} 
+                    size={20} 
+                    color={colors.deepNavy} 
+                  />
+                </View>
+              </TouchableOpacity>
+              {workModeExpanded && (
+                <View style={styles.filterOptions}>
+                  {[
+                    { label: 'All Modes', value: '', icon: 'public' },
+                    { label: 'Remote', value: 'Remote', icon: 'home' },
+                    { label: 'On-site', value: 'On-site', icon: 'business' }
+                  ].map((mode) => (
+                    <TouchableOpacity
+                      key={mode.value}
+                      style={[
+                        styles.filterOption,
+                        { backgroundColor: colors.white },
+                        selectedRemote === mode.value && [
+                          styles.filterOptionActive,
+                          { backgroundColor: colors.deepNavy, borderColor: colors.deepNavy }
+                        ]
+                      ]}
+                      onPress={() => setSelectedRemote(mode.value)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.filterOptionIconCircle,
+                        { backgroundColor: selectedRemote === mode.value ? colors.white + '20' : colors.success + '15' }
+                      ]}>
+                        <Icon 
+                          name={mode.icon} 
+                          size={16} 
+                          color={selectedRemote === mode.value ? colors.white : colors.success} 
+                        />
+                      </View>
+                      <Text style={[
+                        styles.filterOptionText,
+                        { color: colors.deepNavy },
+                        selectedRemote === mode.value && { color: colors.white, fontFamily: fonts.bold }
+                      ]}>
+                        {mode.label}
+                      </Text>
+                      {selectedRemote === mode.value && (
+                        <View style={[styles.checkmarkCircle, { backgroundColor: colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={colors.deepNavy} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Jobs Grid */}
+          <View style={styles.jobsGridSection}>
+            {/* Results Header with Sorting */}
+            <View style={styles.resultsHeader}>
+              <View style={styles.resultsLeftSection}>
+                <Text style={[styles.resultsCount, { color: colors.deepNavy }]}>
+                  {loading ? 'Loading...' : `${totalJobs} ${totalJobs === 1 ? 'job' : 'jobs'} found`}
+                </Text>
+                {(selectedCategory || selectedJobType || selectedRemote) && (
+                  <View style={styles.activeFiltersRow}>
+                    {selectedCategory && (
+                      <View style={[styles.activeFilterChip, { backgroundColor: colors.deepNavy + '15' }]}>
+                        <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedCategory}</Text>
+                        <TouchableOpacity onPress={() => setSelectedCategory('')}>
+                          <Icon name="close" size={14} color={colors.deepNavy} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {selectedJobType && (
+                      <View style={[styles.activeFilterChip, { backgroundColor: colors.deepNavy + '15' }]}>
+                        <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedJobType}</Text>
+                        <TouchableOpacity onPress={() => setSelectedJobType('')}>
+                          <Icon name="close" size={14} color={colors.deepNavy} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+              <View style={styles.resultsRightSection}>
+                <View style={styles.sortContainer}>
+                  <Icon name="sort" size={18} color={colors.warmGray} />
+                  <Text style={[styles.sortLabel, { color: colors.warmGray }]}>Sort by:</Text>
+                  <TouchableOpacity style={styles.sortButton}>
+                    <Text style={[styles.sortButtonText, { color: colors.deepNavy }]}>Most Recent</Text>
+                    <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.viewToggle}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.viewToggleButton, 
+                      { backgroundColor: viewMode === 'grid' ? colors.deepNavy : colors.cream }
+                    ]}
+                    onPress={() => setViewMode('grid')}
+                  >
+                    <Icon name="grid-view" size={18} color={viewMode === 'grid' ? colors.white : colors.deepNavy} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[
+                      styles.viewToggleButton, 
+                      { backgroundColor: viewMode === 'list' ? colors.deepNavy : colors.cream }
+                    ]}
+                    onPress={() => setViewMode('list')}
+                  >
+                    <Icon name="view-list" size={18} color={viewMode === 'list' ? colors.white : colors.deepNavy} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {loading ? (
+              <View style={styles.modernLoadingContainer}>
+                <ActivityIndicator size="large" color={colors.deepNavy} />
+                <Text style={[styles.modernLoadingText, { color: colors.deepNavy }]}>
+                  Finding the perfect opportunities for you...
+                </Text>
+              </View>
+            ) : jobs.length === 0 ? (
+              <View style={styles.modernEmptyState}>
+                <View style={[styles.emptyStateIcon, { backgroundColor: colors.cream }]}>
+                  <Icon name="work-off" size={48} color={colors.warmGray} />
+                </View>
+                <Text style={[styles.emptyStateTitle, { color: colors.deepNavy }]}>No jobs found</Text>
+                <Text style={[styles.emptyStateDescription, { color: colors.warmGray }]}>
+                  Try adjusting your filters or search terms to find more opportunities
+                </Text>
+                <TouchableOpacity 
+                  style={[styles.emptyStateButton, { backgroundColor: colors.deepNavy }]}
+                  onPress={() => {
+                    setSearchText('');
+                    setSelectedCategory('');
+                    setSelectedJobType('');
+                    setSelectedRemote('');
+                  }}
+                >
+                  <Text style={[styles.emptyStateButtonText, { color: colors.white }]}>Clear all filters</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <FlatList
+                  data={jobs}
+                  renderItem={renderJobCard}
+                  keyExtractor={(item) => item.id}
+                  numColumns={viewMode === 'grid' ? 2 : 1}
+                  key={viewMode}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.modernJobsGrid}
+                  scrollEnabled={false}
+                  columnWrapperStyle={viewMode === 'grid' ? styles.modernJobsRow : undefined}
+                />
+
+                {/* Modern Pagination */}
+                {totalPages > 1 && (
+                  <View style={[styles.modernPagination, { backgroundColor: colors.white }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modernPaginationButton,
+                        { borderColor: colors.lightGray },
+                        currentPage === 1 && styles.modernPaginationButtonDisabled
+                      ]}
+                      onPress={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <Icon name="chevron-left" size={20} color={currentPage === 1 ? colors.warmGray : colors.deepNavy} />
+                      <Text style={[
+                        styles.modernPaginationButtonText,
+                        { color: currentPage === 1 ? colors.warmGray : colors.deepNavy }
+                      ]}>
+                        Previous
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.modernPaginationNumbers}>
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNumber;
+                        if (totalPages <= 5) {
+                          pageNumber = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNumber = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNumber = totalPages - 4 + i;
+                        } else {
+                          pageNumber = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <TouchableOpacity
+                            key={pageNumber}
+                            style={[
+                              styles.modernPageNumber,
+                              { borderColor: colors.lightGray },
+                              currentPage === pageNumber && { 
+                                backgroundColor: colors.deepNavy,
+                                borderColor: colors.deepNavy
+                              }
+                            ]}
+                            onPress={() => handlePageChange(pageNumber)}
+                          >
+                            <Text style={[
+                              styles.modernPageNumberText,
+                              { color: colors.deepNavy },
+                              currentPage === pageNumber && { color: colors.white }
+                            ]}>
+                              {pageNumber}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modernPaginationButton,
+                        { borderColor: colors.lightGray },
+                        currentPage === totalPages && styles.modernPaginationButtonDisabled
+                      ]}
+                      onPress={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      <Text style={[
+                        styles.modernPaginationButtonText,
+                        { color: currentPage === totalPages ? colors.warmGray : colors.deepNavy }
+                      ]}>
+                        Next
+                      </Text>
+                      <Icon name="chevron-right" size={20} color={currentPage === totalPages ? colors.warmGray : colors.deepNavy} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -2514,21 +3297,26 @@ function CompaniesScreen({ navigation }: any) {
   );
 }
 
-// Bookmarks Screen (Placeholder)
-function BookmarksScreen({ navigation }: any) {
+// Bookmarks Screen - Modern Design
+function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
   const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
   const [bookmarkedJobs, setBookmarkedJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const colors = lightColors;
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const colors = isDarkMode ? darkColors : lightColors;
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
         setUser(authUser);
-        // Fetch bookmarked jobs
+        // Fetch user data and bookmarked jobs
         const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
-          const bookmarkedJobIds = userDoc.data().bookmarkedJobs || [];
+          const data = userDoc.data();
+          setUserData(data);
+          const bookmarkedJobIds = data.bookmarkedJobs || [];
           // Fetch full job details for bookmarked jobs
           const jobPromises = bookmarkedJobIds.map(async (jobId: string) => {
             const jobDoc = await getDoc(doc(db, 'jobs', jobId));
@@ -2549,42 +3337,342 @@ function BookmarksScreen({ navigation }: any) {
     return unsubscribe;
   }, []);
 
+  const handleRemoveBookmark = async (jobId: string) => {
+    if (!user) return;
+
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const currentBookmarks = bookmarkedJobs.map(job => job.id);
+      const updatedBookmarks = currentBookmarks.filter(id => id !== jobId);
+      
+      await updateDoc(userRef, {
+        bookmarkedJobs: updatedBookmarks
+      });
+      
+      setBookmarkedJobs(bookmarkedJobs.filter(job => job.id !== jobId));
+    } catch (error) {
+      console.error('Error removing bookmark:', error);
+      Alert.alert('Error', 'Failed to remove bookmark');
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.settingsHeader}>
-        <TouchableOpacity 
-          style={styles.settingsBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
-        </TouchableOpacity>
-        <Text style={styles.settingsTitle}>Bookmarked Jobs</Text>
-      </View>
-      <ScrollView style={styles.settingsContainer}>
-        {loading ? (
-          <View style={styles.settingsLoadingContainer}>
-            <ActivityIndicator size="large" color={colors.beeYellow} />
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      {/* Header Toolbar */}
+      <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+            <Image 
+              source={require('./assets/favicon.png')}
+              style={styles.toolbarLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Companies')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
+          </TouchableOpacity>
+          {user && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, styles.toolbarBookmarksButton]}
+              onPress={() => navigation.navigate('Bookmarks')}
+            >
+              <Icon name="bookmark" size={18} color={colors.beeYellow} />
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, marginLeft: 4 }]}>Bookmarks</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Language Selector */}
+          <View style={styles.toolbarLanguageContainer}>
+            <TouchableOpacity 
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+            >
+              <Icon name="language" size={20} color={colors.deepNavy} />
+              <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
+                {selectedLanguage}
+              </Text>
+              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+            </TouchableOpacity>
+            
+            {showLanguageMenu && (
+              <View style={[styles.languageDropdownMenu, { backgroundColor: colors.white }]}>
+                {['English', 'አማርኛ', 'ትግርኛ', 'Oromiffa'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={styles.languageMenuItem}
+                    onPress={() => {
+                      setSelectedLanguage(lang);
+                      setShowLanguageMenu(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.languageMenuItemText,
+                      { color: colors.deepNavy },
+                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
+                    ]}>
+                      {lang}
+                    </Text>
+                    {selectedLanguage === lang && (
+                      <Icon name="check" size={16} color={colors.beeYellow} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
           </View>
-        ) : bookmarkedJobs.length === 0 ? (
-          <View style={styles.emptyStateContainer}>
-            <Icon name="bookmark-outline" size={64} color={colors.warmGray} />
-            <Text style={styles.emptyStateText}>No Bookmarked Jobs</Text>
-            <Text style={styles.emptyStateSubtext}>Save jobs to view them later</Text>
-          </View>
-        ) : (
-          <View style={styles.settingsSection}>
-            {bookmarkedJobs.map((job: any) => (
-              <TouchableOpacity
-                key={job.id}
-                style={styles.settingsCard}
-                onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+        </View>
+        
+        <View style={styles.jobsToolbarRight}>
+          {/* Theme Toggle Switch */}
+          <TouchableOpacity 
+            style={styles.toolbarThemeToggle}
+            onPress={toggleTheme}
+          >
+            <View style={[
+              styles.themeToggleTrack,
+              { backgroundColor: isDarkMode ? colors.deepNavy : colors.lightGray }
+            ]}>
+              <Icon 
+                name="wb-sunny" 
+                size={14} 
+                color={isDarkMode ? colors.warmGray : colors.beeYellow}
+                style={styles.themeToggleIconLeft}
+              />
+              <View style={[
+                styles.themeToggleKnob,
+                { backgroundColor: colors.white },
+                isDarkMode && styles.themeToggleKnobActive
+              ]}>
+                <Icon 
+                  name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} 
+                  size={12} 
+                  color={isDarkMode ? colors.deepNavy : colors.beeYellow}
+                />
+              </View>
+              <Icon 
+                name="nightlight-round" 
+                size={14} 
+                color={isDarkMode ? colors.beeYellow : colors.warmGray}
+                style={styles.themeToggleIconRight}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {user && (
+            <>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }}
+                  style={styles.toolbarProfilePicture}
+                />
+              ) : (
+                <View style={[styles.toolbarProfilePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={20} color={colors.deepNavy} />
+                </View>
+              )}
+              <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
+                {user.email?.split('@')[0]}
+              </Text>
+              <TouchableOpacity 
+                style={styles.toolbarSettingsButton}
+                onPress={() => navigation.navigate('Settings')}
               >
-                <Text style={styles.categoryCardText}>{job.title}</Text>
-                <Text style={styles.settingsSectionSubtitle}>{job.company}</Text>
+                <Icon name="settings" size={24} color={colors.deepNavy} />
               </TouchableOpacity>
-            ))}
+              <TouchableOpacity 
+                style={styles.toolbarLogoutButton}
+                onPress={() => {
+                  signOut(auth);
+                  navigation.replace('Home');
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.danger} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
+      </View>
+
+      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: colors.cream }]}>
+        {/* Hero Section */}
+        <View style={[styles.bookmarksHeroSection, { backgroundColor: colors.deepNavy }]}>
+          <View style={styles.heroBackgroundDecor}>
+            <View style={[styles.heroCircle1, { backgroundColor: colors.beeYellow + '15' }]} />
+            <View style={[styles.heroCircle2, { backgroundColor: colors.softBlue + '15' }]} />
           </View>
-        )}
+          
+          <View style={styles.bookmarksHeroContent}>
+            <View style={styles.bookmarksHeroIconCircle}>
+              <Icon name="bookmark" size={40} color={colors.beeYellow} />
+            </View>
+            <Text style={[styles.bookmarksHeroTitle, { color: colors.white }]}>
+              Your Bookmarked Jobs
+            </Text>
+            <Text style={[styles.bookmarksHeroSubtitle, { color: colors.cream }]}>
+              {loading ? 'Loading...' : `${bookmarkedJobs.length} ${bookmarkedJobs.length === 1 ? 'job' : 'jobs'} saved`}
+            </Text>
+          </View>
+        </View>
+
+        {/* Content Section */}
+        <View style={styles.bookmarksContentContainer}>
+          {loading ? (
+            <View style={styles.bookmarksLoadingContainer}>
+              <ActivityIndicator size="large" color={colors.beeYellow} />
+              <Text style={[styles.bookmarksLoadingText, { color: colors.warmGray }]}>
+                Loading your bookmarked jobs...
+              </Text>
+            </View>
+          ) : bookmarkedJobs.length === 0 ? (
+            <View style={[styles.bookmarksEmptyState, { backgroundColor: colors.white }]}>
+              <View style={[styles.bookmarksEmptyIconCircle, { backgroundColor: colors.cream }]}>
+                <Icon name="bookmark-outline" size={80} color={colors.warmGray} />
+              </View>
+              <Text style={[styles.bookmarksEmptyTitle, { color: colors.deepNavy }]}>
+                No Bookmarked Jobs Yet
+              </Text>
+              <Text style={[styles.bookmarksEmptySubtitle, { color: colors.warmGray }]}>
+                Start exploring jobs and bookmark the ones you're interested in. They'll appear here for easy access.
+              </Text>
+              <TouchableOpacity 
+                style={[styles.bookmarksEmptyButton, { backgroundColor: colors.beeYellow }]}
+                onPress={() => navigation.navigate('Jobs')}
+              >
+                <Icon name="search" size={20} color={colors.deepNavy} />
+                <Text style={[styles.bookmarksEmptyButtonText, { color: colors.deepNavy }]}>
+                  Browse Jobs
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.bookmarksGridContainer}>
+              <View style={styles.bookmarksGridHeader}>
+                <Text style={[styles.bookmarksGridTitle, { color: colors.deepNavy }]}>
+                  Saved Opportunities
+                </Text>
+                <View style={styles.bookmarksGridStats}>
+                  <Icon name="bookmark" size={18} color={colors.beeYellow} />
+                  <Text style={[styles.bookmarksGridStatsText, { color: colors.warmGray }]}>
+                    {bookmarkedJobs.length} {bookmarkedJobs.length === 1 ? 'Job' : 'Jobs'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.bookmarksGrid}>
+                {bookmarkedJobs.map((job: any) => (
+                  <TouchableOpacity
+                    key={job.id}
+                    style={[styles.modernBookmarkCard, { backgroundColor: colors.white }]}
+                    onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+                    activeOpacity={0.7}
+                  >
+                    {/* Card Header */}
+                    <View style={styles.modernBookmarkCardHeader}>
+                      <View style={styles.modernBookmarkLogoContainer}>
+                        {job.sourceImageUrl ? (
+                          <Image
+                            source={{ uri: job.sourceImageUrl }}
+                            style={styles.modernBookmarkLogo}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View style={[styles.modernBookmarkLogoPlaceholder, { backgroundColor: colors.cream }]}>
+                            <Text style={[styles.modernBookmarkLogoText, { color: colors.deepNavy }]}>
+                              {job.company?.charAt(0) || 'C'}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      <TouchableOpacity 
+                        style={[styles.modernRemoveBookmarkButton, { backgroundColor: colors.danger + '10' }]}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Alert.alert(
+                            'Remove Bookmark',
+                            'Are you sure you want to remove this job from your bookmarks?',
+                            [
+                              { text: 'Cancel', style: 'cancel' },
+                              { text: 'Remove', style: 'destructive', onPress: () => handleRemoveBookmark(job.id) }
+                            ]
+                          );
+                        }}
+                      >
+                        <Icon name="close" size={16} color={colors.danger} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Job Info */}
+                    <View style={styles.modernBookmarkCardBody}>
+                      <Text style={[styles.modernBookmarkJobTitle, { color: colors.deepNavy }]} numberOfLines={2}>
+                        {job.title || 'Job Title'}
+                      </Text>
+                      <Text style={[styles.modernBookmarkCompany, { color: colors.warmGray }]} numberOfLines={1}>
+                        {job.company || 'Company Name'}
+                      </Text>
+
+                      {/* Tags */}
+                      <View style={styles.modernBookmarkTags}>
+                        {job.contractType && (
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.softBlue + '20', borderColor: colors.softBlue }]}>
+                            <Icon name="work-outline" size={12} color={colors.softBlue} />
+                            <Text style={[styles.modernBookmarkTagText, { color: colors.softBlue }]}>{job.contractType}</Text>
+                          </View>
+                        )}
+                        {job.isRemote && (
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+                            <Icon name="home-work" size={12} color={colors.success} />
+                            <Text style={[styles.modernBookmarkTagText, { color: colors.success }]}>Remote</Text>
+                          </View>
+                        )}
+                        {job.location && (
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.cream, borderColor: colors.warmGray + '40' }]}>
+                            <Icon name="location-on" size={12} color={colors.warmGray} />
+                            <Text style={[styles.modernBookmarkTagText, { color: colors.warmGray }]} numberOfLines={1}>
+                              {job.location}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Salary */}
+                      {job.salary && (
+                        <View style={[styles.modernBookmarkSalary, { backgroundColor: colors.success + '10' }]}>
+                          <Icon name="payments" size={16} color={colors.success} />
+                          <Text style={[styles.modernBookmarkSalaryText, { color: colors.success }]}>
+                            {job.salary}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {/* Card Footer */}
+                    <View style={[styles.modernBookmarkCardFooter, { borderTopColor: colors.lightGray }]}>
+                      <View style={styles.modernBookmarkDate}>
+                        <Icon name="access-time" size={14} color={colors.warmGray} />
+                        <Text style={[styles.modernBookmarkDateText, { color: colors.warmGray }]}>
+                          {job.createdAt ? new Date(job.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent'}
+                        </Text>
+                      </View>
+                      <View style={[styles.modernBookmarkApplyButton, { backgroundColor: colors.deepNavy }]}>
+                        <Text style={[styles.modernBookmarkApplyText, { color: colors.white }]}>View</Text>
+                        <Icon name="arrow-forward" size={14} color={colors.white} />
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -2595,6 +3683,10 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
   const [user, setUser] = useState<any>(null);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [selectedMenu, setSelectedMenu] = useState<string>('profile');
+  const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
   
   const colors = isDarkMode ? darkColors : lightColors;
 
@@ -2605,7 +3697,10 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
         // Fetch user data
         const userDoc = await getDoc(doc(db, 'users', authUser.uid));
         if (userDoc.exists()) {
-          setUserData(userDoc.data());
+          const data = userDoc.data();
+          setUserData(data);
+          setBookmarkedJobs(data.bookmarkedJobs || []);
+          setSelectedLanguage(data.language || 'English');
         }
       } else {
         navigation.replace('Login');
@@ -2620,51 +3715,189 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
     {
       id: 'profile',
       title: 'Profile',
-      subtitle: 'Display name, profile picture, date of birth',
-      icon: 'person',
-      screen: 'SettingsProfile',
+      subtitle: 'Personal information',
+      icon: 'person-outline',
     },
     {
       id: 'appearance',
       title: 'Appearance',
-      subtitle: 'Theme and display preferences',
+      subtitle: 'Theme preferences',
       icon: 'palette',
-      screen: 'SettingsAppearance',
     },
     {
       id: 'language',
       title: 'Language',
       subtitle: userData?.language || 'English',
       icon: 'language',
-      screen: 'SettingsLanguage',
     },
     {
       id: 'interests',
       title: 'Job Interests',
-      subtitle: 'Preferred job categories',
-      icon: 'work',
-      screen: 'SettingsInterests',
+      subtitle: 'Preferred categories',
+      icon: 'work-outline',
     },
     {
       id: 'subscription',
-      title: 'Subscription Plan',
+      title: 'Subscription',
       subtitle: userData?.subscriptionPlan || 'Free Plan',
       icon: 'card-membership',
-      screen: 'SettingsSubscription',
     },
   ];
 
+  const renderSettingsContent = () => {
+    const props = { userData, user, isDarkMode, toggleTheme, colors, navigation };
+    
+    switch (selectedMenu) {
+      case 'profile':
+        return <SettingsProfileContent {...props} />;
+      case 'appearance':
+        return <SettingsAppearanceContent {...props} />;
+      case 'language':
+        return <SettingsLanguageContent {...props} />;
+      case 'interests':
+        return <SettingsInterestsContent {...props} />;
+      case 'subscription':
+        return <SettingsSubscriptionContent {...props} />;
+      default:
+        return null;
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
-      {/* Header */}
-      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
-        <TouchableOpacity 
-          style={styles.settingsBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
-        </TouchableOpacity>
-        <Text style={[styles.settingsTitle, { color: colors.deepNavy }]}>Settings</Text>
+      {/* Header Toolbar - Reused from Jobs Screen */}
+      <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+            <Image 
+              source={require('./assets/favicon.png')}
+              style={styles.toolbarLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Companies')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
+          </TouchableOpacity>
+          
+          {/* Language Selector */}
+          <View style={styles.toolbarLanguageContainer}>
+            <TouchableOpacity 
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+            >
+              <Icon name="language" size={20} color={colors.deepNavy} />
+              <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
+                {selectedLanguage}
+              </Text>
+              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+            </TouchableOpacity>
+            
+            {showLanguageMenu && (
+              <View style={[styles.languageMenu, { backgroundColor: colors.white }]}>
+                {['English', 'Amharic', 'Oromifa'].map((lang) => (
+                  <TouchableOpacity
+                    key={lang}
+                    style={styles.languageMenuItem}
+                    onPress={() => {
+                      setSelectedLanguage(lang);
+                      setShowLanguageMenu(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.languageMenuItemText,
+                      { color: colors.deepNavy },
+                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
+                    ]}>
+                      {lang}
+                    </Text>
+                    {selectedLanguage === lang && (
+                      <Icon name="check" size={16} color={colors.beeYellow} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </View>
+        </View>
+        
+        <View style={styles.jobsToolbarRight}>
+          {/* Theme Toggle Switch */}
+          <TouchableOpacity 
+            style={styles.toolbarThemeToggle}
+            onPress={toggleTheme}
+          >
+            <View style={[
+              styles.themeToggleTrack,
+              { backgroundColor: isDarkMode ? colors.deepNavy : colors.lightGray }
+            ]}>
+              <Icon 
+                name="wb-sunny" 
+                size={14} 
+                color={isDarkMode ? colors.warmGray : colors.beeYellow}
+                style={styles.themeToggleIconLeft}
+              />
+              <View style={[
+                styles.themeToggleKnob,
+                { backgroundColor: colors.white },
+                isDarkMode && styles.themeToggleKnobActive
+              ]}>
+                <Icon 
+                  name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} 
+                  size={12} 
+                  color={isDarkMode ? colors.deepNavy : colors.beeYellow}
+                />
+              </View>
+              <Icon 
+                name="nightlight-round" 
+                size={14} 
+                color={isDarkMode ? colors.beeYellow : colors.warmGray}
+                style={styles.themeToggleIconRight}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {user && (
+            <>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }}
+                  style={styles.toolbarProfilePicture}
+                />
+              ) : (
+                <View style={[styles.toolbarProfilePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={20} color={colors.deepNavy} />
+                </View>
+              )}
+              <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
+                {user.email?.split('@')[0]}
+              </Text>
+              <TouchableOpacity 
+                style={styles.toolbarSettingsButton}
+                onPress={() => navigation.navigate('Settings')}
+              >
+                <Icon name="settings" size={24} color={colors.beeYellow} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.toolbarLogoutButton}
+                onPress={() => {
+                  signOut(auth);
+                  navigation.replace('Home');
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.danger} />
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
 
       {loading ? (
@@ -2672,81 +3905,651 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
           <ActivityIndicator size="large" color={colors.beeYellow} />
         </View>
       ) : (
-        <ScrollView style={[styles.settingsContainer, { backgroundColor: colors.cream }]}>
-          {/* Profile Card */}
-          <View style={styles.settingsSection}>
-            <View style={[styles.settingsProfileCard, { backgroundColor: colors.white }]}>
-              {userData?.profilePicture ? (
-                <Image 
-                  source={{ uri: userData.profilePicture }} 
-                  style={styles.settingsProfileImage}
-                />
-              ) : (
-                <View style={[styles.settingsProfileImagePlaceholder, { backgroundColor: colors.beeYellow }]}>
-                  <Icon name="person" size={48} color={colors.deepNavy} />
+        <View style={styles.settingsSplitContainer}>
+          {/* Left Sidebar Menu - Modernized */}
+          <View style={[styles.settingsSidebar, { backgroundColor: colors.white }]}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {/* Compact Profile Header */}
+              <View style={[styles.modernProfileHeader, { borderBottomColor: colors.lightGray }]}>
+                {userData?.profilePicture ? (
+                  <Image 
+                    source={{ uri: userData.profilePicture }} 
+                    style={styles.modernProfileImage}
+                  />
+                ) : (
+                  <View style={[styles.modernProfileImagePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                    <Icon name="person" size={32} color={colors.deepNavy} />
+                  </View>
+                )}
+                <View style={styles.modernProfileInfo}>
+                  <Text style={[styles.modernProfileName, { color: colors.deepNavy }]} numberOfLines={1}>
+                    {userData?.displayName || user?.email?.split('@')[0] || 'User'}
+                  </Text>
+                  <Text style={[styles.modernProfileEmail, { color: colors.warmGray }]} numberOfLines={1}>
+                    {user?.email}
+                  </Text>
                 </View>
-              )}
-              <View style={styles.settingsProfileInfo}>
-                <Text style={[styles.settingsProfileName, { color: colors.deepNavy }]}>
-                  {userData?.displayName || user?.email?.split('@')[0] || 'User'}
-                </Text>
-                <Text style={[styles.settingsProfileEmail, { color: colors.warmGray }]}>
-                  {user?.email}
-                </Text>
               </View>
-            </View>
-          </View>
 
-          {/* Settings Menu Items */}
-          <View style={styles.settingsSection}>
-            {settingsMenuItems.map((item) => (
+              {/* Menu Items - Simplified */}
+              <View style={styles.modernMenuContainer}>
+                {settingsMenuItems.map((item) => (
+                  <TouchableOpacity
+                    key={item.id}
+                    style={[
+                      styles.modernMenuItem,
+                      selectedMenu === item.id && [
+                        styles.modernMenuItemActive,
+                        { backgroundColor: colors.cream, borderLeftColor: colors.beeYellow }
+                      ]
+                    ]}
+                    onPress={() => setSelectedMenu(item.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Icon 
+                      name={item.icon} 
+                      size={22} 
+                      color={selectedMenu === item.id ? colors.beeYellow : colors.warmGray} 
+                    />
+                    <View style={styles.modernMenuTextContainer}>
+                      <Text style={[
+                        styles.modernMenuTitle, 
+                        { color: colors.deepNavy },
+                        selectedMenu === item.id && styles.modernMenuTitleActive
+                      ]}>
+                        {item.title}
+                      </Text>
+                    </View>
+                    {selectedMenu === item.id && (
+                      <Icon name="chevron-right" size={18} color={colors.beeYellow} />
+                    )}
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              {/* Logout Button - Minimalist */}
               <TouchableOpacity
-                key={item.id}
-                style={[styles.settingsMenuItem, { backgroundColor: colors.white }]}
-                onPress={() => navigation.navigate(item.screen, { userData, user })}
+                style={[styles.modernLogoutButton, { borderTopColor: colors.lightGray }]}
+                onPress={async () => {
+                  await signOut(auth);
+                  navigation.replace('Home');
+                }}
+                activeOpacity={0.7}
               >
-                <View style={[styles.settingsMenuIconContainer, { backgroundColor: colors.cream }]}>
-                  <Icon name={item.icon} size={24} color={colors.beeYellow} />
-                </View>
-                <View style={styles.settingsMenuContent}>
-                  <Text style={[styles.settingsMenuTitle, { color: colors.deepNavy }]}>
-                    {item.title}
-                  </Text>
-                  <Text style={[styles.settingsMenuSubtitle, { color: colors.warmGray }]}>
-                    {item.subtitle}
-                  </Text>
-                </View>
-                <Icon name="chevron-right" size={24} color={colors.warmGray} />
+                <Icon name="logout" size={20} color={colors.error} />
+                <Text style={[styles.modernLogoutText, { color: colors.error }]}>
+                  Logout
+                </Text>
               </TouchableOpacity>
-            ))}
+            </ScrollView>
           </View>
 
-          {/* Logout Button */}
-          <View style={styles.settingsSection}>
-            <TouchableOpacity
-              style={[styles.settingsLogoutButton, { backgroundColor: colors.white, borderColor: colors.error }]}
-              onPress={async () => {
-                await signOut(auth);
-                navigation.replace('Home');
-              }}
-            >
-              <Icon name="logout" size={20} color={colors.error} />
-              <Text style={[styles.settingsLogoutButtonText, { color: colors.error }]}>
-                Logout
-              </Text>
-            </TouchableOpacity>
+          {/* Right Content Area - Clean Layout */}
+          <View style={[styles.settingsContentArea, { backgroundColor: colors.cream }]}>
+            {renderSettingsContent()}
           </View>
-        </ScrollView>
+        </View>
       )}
     </SafeAreaView>
   );
 }
 
-// Settings Profile Sub-Screen
+// Settings Content Components (inline versions without headers)
+
+function SettingsProfileContent({ userData, user, colors }: any) {
+  const [displayName, setDisplayName] = useState(userData?.displayName || '');
+  const [dateOfBirth, setDateOfBirth] = useState(userData?.dateOfBirth || '');
+  const [bio, setBio] = useState(userData?.bio || '');
+  const [profilePicture, setProfilePicture] = useState(userData?.profilePicture || '');
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (status !== 'granted') {
+        Alert.alert('Permission Required', 'Sorry, we need camera roll permissions to upload photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploading(true);
+        await uploadImage(result.assets[0].uri);
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to pick image');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const uploadImage = async (uri: string) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      const filename = `profile_pictures/${user.uid}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, filename);
+
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      setProfilePicture(downloadURL);
+      
+      await updateDoc(doc(db, 'users', user.uid), {
+        profilePicture: downloadURL,
+      });
+      
+      Alert.alert('Success', 'Photo uploaded successfully!');
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      Alert.alert('Error', 'Failed to upload photo');
+    }
+  };
+
+  const saveProfile = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        displayName,
+        dateOfBirth,
+        bio,
+        profilePicture,
+      });
+      Alert.alert('Success', 'Profile updated successfully!');
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.settingsContentScroll} showsVerticalScrollIndicator={false}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Profile</Text>
+        <Text style={[styles.settingsContentSubtitle, { color: colors.warmGray }]}>
+          Manage your personal information
+        </Text>
+        
+        <View style={styles.settingsSection}>
+          {/* Profile Picture - Centered & Clean */}
+          <View style={styles.modernProfilePictureSection}>
+            {profilePicture ? (
+              <Image source={{ uri: profilePicture }} style={styles.modernProfilePicturePreview} />
+            ) : (
+              <View style={[styles.modernProfilePicturePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                <Icon name="person" size={80} color={colors.deepNavy} />
+              </View>
+            )}
+            
+            <TouchableOpacity 
+              style={[styles.modernUploadButton, { backgroundColor: colors.beeYellow }]}
+              onPress={pickImage}
+              disabled={uploading}
+            >
+              <Icon name="cloud-upload" size={20} color={colors.deepNavy} />
+              <Text style={[styles.modernUploadButtonText, { color: colors.deepNavy }]}>
+                {uploading ? 'Uploading...' : 'Change Photo'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Form Fields - Modern Design */}
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Display Name</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Enter your display name"
+              placeholderTextColor={colors.warmGray}
+              value={displayName}
+              onChangeText={setDisplayName}
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Bio</Text>
+            <TextInput
+              style={[styles.modernTextInput, styles.modernTextArea, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Tell us about yourself..."
+              placeholderTextColor={colors.warmGray}
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Date of Birth</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.warmGray}
+              value={dateOfBirth}
+              onChangeText={setDateOfBirth}
+            />
+            <Text style={[styles.modernInputHint, { color: colors.warmGray }]}>
+              Format: YYYY-MM-DD (e.g., 1990-01-15)
+            </Text>
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Email</Text>
+            <TextInput
+              style={[styles.modernTextInput, styles.modernTextInputDisabled, { backgroundColor: colors.lightGray, color: colors.warmGray }]}
+              value={user?.email}
+              editable={false}
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.modernSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.modernSaveButtonDisabled]}
+            onPress={saveProfile}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color={colors.deepNavy} />
+            ) : (
+              <>
+                <Icon name="check" size={20} color={colors.deepNavy} />
+                <Text style={[styles.modernSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function SettingsAppearanceContent({ colors, isDarkMode, toggleTheme }: any) {
+  return (
+    <ScrollView style={styles.settingsContentScroll} showsVerticalScrollIndicator={false}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Appearance</Text>
+        <Text style={[styles.settingsContentSubtitle, { color: colors.warmGray }]}>
+          Customize how NibJobs looks for you
+        </Text>
+        
+        <View style={styles.settingsSection}>
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <View style={styles.modernToggleRow}>
+              <View style={styles.modernToggleLeft}>
+                <View style={[styles.modernIconCircle, { backgroundColor: colors.cream }]}>
+                  <Icon name={isDarkMode ? 'dark-mode' : 'light-mode'} size={24} color={colors.beeYellow} />
+                </View>
+                <View>
+                  <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>
+                    Dark Mode
+                  </Text>
+                  <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                    {isDarkMode ? 'Dark theme enabled' : 'Light theme enabled'}
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={isDarkMode}
+                onValueChange={toggleTheme}
+                trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+                thumbColor={colors.white}
+                ios_backgroundColor={colors.lightGray}
+              />
+            </View>
+          </View>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+function SettingsLanguageContent({ userData, user, colors }: any) {
+  const [selectedLanguage, setSelectedLanguage] = useState(userData?.language || 'English');
+  const [saving, setSaving] = useState(false);
+  
+  const languages = ['English', 'Amharic', 'Oromifa'];
+
+  const saveLanguage = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        language: selectedLanguage,
+      });
+      Alert.alert('Success', 'Language preference saved!');
+    } catch (error) {
+      console.error('Error saving language:', error);
+      Alert.alert('Error', 'Failed to save language preference');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.settingsContentScroll}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Language</Text>
+        
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Select Language</Text>
+          
+          {languages.map((lang) => (
+            <TouchableOpacity
+              key={lang}
+              style={[
+                styles.settingsToggleItem,
+                { backgroundColor: colors.white }
+              ]}
+              onPress={() => setSelectedLanguage(lang)}
+            >
+              <View style={styles.settingsToggleLeft}>
+                <View style={[styles.settingsMenuIconContainer, { backgroundColor: colors.cream }]}>
+                  <Icon name="language" size={24} color={colors.beeYellow} />
+                </View>
+                <Text style={[styles.settingsMenuTitle, { color: colors.deepNavy }]}>
+                  {lang}
+                </Text>
+              </View>
+              {selectedLanguage === lang && (
+                <Icon name="check-circle" size={24} color={colors.success} />
+              )}
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.settingsSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.settingsSaveButtonDisabled]}
+          onPress={saveLanguage}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#1a1a2e" />
+          ) : (
+            <Text style={[styles.settingsSaveButtonText, { color: '#1a1a2e' }]}>Save Changes</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function SettingsInterestsContent({ userData, user, colors }: any) {
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(userData?.interestedCategories || []);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    fetchCategories();
+  }, []);
+
+  const fetchCategories = async () => {
+    try {
+      setLoading(true);
+      const categoriesCollection = collection(db, 'categories');
+      const categoriesSnapshot = await getDocs(categoriesCollection);
+      const categoriesData = categoriesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const toggleCategory = (categoryId: string) => {
+    if (selectedCategories.includes(categoryId)) {
+      setSelectedCategories(selectedCategories.filter(id => id !== categoryId));
+    } else {
+      setSelectedCategories([...selectedCategories, categoryId]);
+    }
+  };
+
+  const saveInterests = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        interestedCategories: selectedCategories,
+      });
+      Alert.alert('Success', 'Interests saved successfully!');
+    } catch (error) {
+      console.error('Error saving interests:', error);
+      Alert.alert('Error', 'Failed to save interests');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ScrollView style={styles.settingsContentScroll}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Job Interests</Text>
+        
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Interested Job Categories</Text>
+          <Text style={[styles.settingsSectionSubtitle, { color: colors.warmGray }]}>
+            Select categories to personalize your job recommendations
+          </Text>
+          
+          {loading ? (
+            <View style={styles.settingsLoadingContainer}>
+              <ActivityIndicator size="large" color={colors.beeYellow} />
+            </View>
+          ) : (
+            <View style={styles.settingsCategoriesGrid}>
+              {categories.map((category) => (
+                <TouchableOpacity
+                  key={category.id}
+                  style={[
+                    styles.settingsCategoryChip,
+                    {
+                      backgroundColor: selectedCategories.includes(category.id)
+                        ? colors.beeYellow
+                        : colors.white,
+                      borderColor: selectedCategories.includes(category.id)
+                        ? colors.beeYellow
+                        : colors.lightGray,
+                    },
+                  ]}
+                  onPress={() => toggleCategory(category.id)}
+                >
+                  <Text
+                    style={[
+                      styles.settingsCategoryChipText,
+                      {
+                        color: selectedCategories.includes(category.id)
+                          ? colors.deepNavy
+                          : colors.warmGray,
+                      },
+                    ]}
+                  >
+                    {category.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <TouchableOpacity 
+          style={[styles.settingsSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.settingsSaveButtonDisabled]}
+          onPress={saveInterests}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#1a1a2e" />
+          ) : (
+            <Text style={[styles.settingsSaveButtonText, { color: '#1a1a2e' }]}>Save Changes</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </ScrollView>
+  );
+}
+
+function SettingsSubscriptionContent({ userData, user, colors }: any) {
+  const currentPlan = userData?.subscriptionPlan || 'Free';
+
+  const plans = [
+    {
+      id: 'free',
+      name: 'Free Plan',
+      price: '$0/month',
+      features: [
+        'Browse all jobs',
+        'Apply to unlimited jobs',
+        'Save up to 10 jobs',
+        'Basic job alerts',
+      ],
+    },
+    {
+      id: 'basic',
+      name: 'Basic Plan',
+      price: '$9.99/month',
+      features: [
+        'Everything in Free',
+        'Unlimited saved jobs',
+        'Priority job alerts',
+        'Resume builder access',
+        'Email support',
+      ],
+    },
+    {
+      id: 'premium',
+      name: 'Premium Plan',
+      price: '$19.99/month',
+      features: [
+        'Everything in Basic',
+        'Featured profile',
+        'Direct messaging with employers',
+        'Advanced analytics',
+        'Priority support',
+      ],
+    },
+  ];
+
+  const upgradePlan = (planId: string) => {
+    Alert.alert(
+      'Upgrade Plan',
+      `Are you sure you want to upgrade to ${plans.find(p => p.id === planId)?.name}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Upgrade',
+          onPress: async () => {
+            try {
+              await updateDoc(doc(db, 'users', user.uid), {
+                subscriptionPlan: planId,
+              });
+              Alert.alert('Success', 'Plan upgraded successfully!');
+            } catch (error) {
+              console.error('Error upgrading plan:', error);
+              Alert.alert('Error', 'Failed to upgrade plan');
+            }
+          }
+        },
+      ]
+    );
+  };
+
+  return (
+    <ScrollView style={styles.settingsContentScroll}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Subscription</Text>
+        
+        <View style={styles.settingsSection}>
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy }]}>Current Plan</Text>
+          <View style={[styles.settingsCurrentPlanCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsCurrentPlanName, { color: colors.deepNavy }]}>
+              {plans.find(p => p.id === currentPlan.toLowerCase())?.name || 'Free Plan'}
+            </Text>
+            <Text style={[styles.settingsCurrentPlanPrice, { color: colors.beeYellow }]}>
+              {plans.find(p => p.id === currentPlan.toLowerCase())?.price || '$0/month'}
+            </Text>
+          </View>
+
+          <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, marginTop: 24 }]}>Available Plans</Text>
+          {plans.map((plan) => (
+            <View
+              key={plan.id}
+              style={[
+                styles.settingsPlanCard,
+                { backgroundColor: colors.white },
+                currentPlan.toLowerCase() === plan.id && { borderColor: colors.beeYellow, borderWidth: 2 },
+              ]}
+            >
+              <View style={styles.settingsPlanHeader}>
+                <View>
+                  <Text style={[styles.settingsPlanName, { color: colors.deepNavy }]}>
+                    {plan.name}
+                  </Text>
+                  <Text style={[styles.settingsPlanPrice, { color: colors.beeYellow }]}>
+                    {plan.price}
+                  </Text>
+                </View>
+                {currentPlan.toLowerCase() === plan.id && (
+                  <View style={[styles.settingsCurrentBadge, { backgroundColor: colors.beeYellow }]}>
+                    <Text style={[styles.settingsCurrentBadgeText, { color: colors.deepNavy }]}>
+                      Current
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={styles.settingsPlanFeatures}>
+                {plan.features.map((feature, index) => (
+                  <View key={index} style={styles.settingsPlanFeature}>
+                    <Icon name="check-circle" size={16} color={colors.success} />
+                    <Text style={[styles.settingsPlanFeatureText, { color: colors.deepNavy }]}>
+                      {feature}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+              {currentPlan.toLowerCase() !== plan.id && plan.id !== 'free' && (
+                <TouchableOpacity
+                  style={[styles.settingsUpgradeButton, { backgroundColor: colors.beeYellow }]}
+                  onPress={() => upgradePlan(plan.id)}
+                >
+                  <Text style={[styles.settingsUpgradeButtonText, { color: colors.deepNavy }]}>
+                    Upgrade
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ))}
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+// Settings Profile Sub-Screen (kept for backward compatibility with navigation)
 function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
   const { userData, user } = route.params;
   const [displayName, setDisplayName] = useState(userData?.displayName || '');
   const [dateOfBirth, setDateOfBirth] = useState(userData?.dateOfBirth || '');
+  const [bio, setBio] = useState(userData?.bio || '');
   const [profilePicture, setProfilePicture] = useState(userData?.profilePicture || '');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -2804,6 +4607,11 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
       // Update the profile picture state
       setProfilePicture(downloadURL);
       
+      // Save to Firestore immediately
+      await updateDoc(doc(db, 'users', user.uid), {
+        profilePicture: downloadURL,
+      });
+      
       Alert.alert('Success', 'Photo uploaded successfully!');
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -2819,6 +4627,7 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
       await updateDoc(doc(db, 'users', user.uid), {
         displayName,
         dateOfBirth,
+        bio,
         profilePicture,
       });
       Alert.alert('Success', 'Profile updated successfully!');
@@ -2850,7 +4659,7 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
                 <Image source={{ uri: profilePicture }} style={styles.profilePicturePreview} />
               ) : (
                 <View style={[styles.profilePicturePlaceholder, { backgroundColor: colors.beeYellow }]}>
-                  <Icon name="person" size={64} color={colors.deepNavy} />
+                  <Icon name="person" size={64} color="#1a1a2e" />
                 </View>
               )}
               
@@ -2859,8 +4668,8 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
                 onPress={pickImage}
                 disabled={uploading}
               >
-                <Icon name="cloud-upload" size={20} color={colors.deepNavy} />
-                <Text style={[styles.uploadPhotoButtonText, { color: colors.deepNavy }]}>
+                <Icon name="cloud-upload" size={20} color="#1a1a2e" />
+                <Text style={[styles.uploadPhotoButtonText, { color: '#1a1a2e' }]}>
                   {uploading ? 'Uploading...' : 'Upload Photo'}
                 </Text>
               </TouchableOpacity>
@@ -2876,6 +4685,21 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
               placeholderTextColor={colors.warmGray}
               value={displayName}
               onChangeText={setDisplayName}
+            />
+          </View>
+
+          {/* Bio */}
+          <View style={[styles.settingsInputGroup, { backgroundColor: colors.white }]}>
+            <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Bio</Text>
+            <TextInput
+              style={[styles.settingsTextInput, styles.settingsTextAreaInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Tell us about yourself..."
+              placeholderTextColor={colors.warmGray}
+              value={bio}
+              onChangeText={setBio}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
             />
           </View>
 
@@ -2912,9 +4736,9 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color={colors.deepNavy} />
+            <ActivityIndicator size="small" color="#1a1a2e" />
           ) : (
-            <Text style={[styles.settingsSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+            <Text style={[styles.settingsSaveButtonText, { color: '#1a1a2e' }]}>Save Changes</Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -5356,8 +7180,9 @@ function HomeScreen({ navigation }: any) {
   const [searchText, setSearchText] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
   const [selectedContractType, setSelectedContractType] = useState('');
-  const [selectedLocation, setSelectedLocation] = useState('');
   const [isRemote, setIsRemote] = useState(false);
+  const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
   
   // Theme and Language states
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -5367,6 +7192,28 @@ function HomeScreen({ navigation }: any) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const languageButtonRef = useRef<TouchableOpacity>(null);
   const channelScrollViewRef = useRef<ScrollView>(null);
+  
+  // Auth state listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      setUser(authUser);
+      if (authUser) {
+        // Fetch user data from Firestore
+        try {
+          const userDocRef = doc(db, 'users', authUser.uid);
+          const userDoc = await getDoc(userDocRef);
+          if (userDoc.exists()) {
+            setUserData(userDoc.data());
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      } else {
+        setUserData(null);
+      }
+    });
+    return unsubscribe;
+  }, []);
   
   // Responsive design
   const [dimensions, setDimensions] = useState(Dimensions.get('window'));
@@ -5890,7 +7737,15 @@ function HomeScreen({ navigation }: any) {
     <TouchableOpacity 
       style={dynamicStyles.jobCard} 
       activeOpacity={0.85}
-      onPress={() => navigation.navigate('JobDetails', { id: job.id, job })}
+      onPress={() => {
+        if (user) {
+          navigation.navigate('JobDetails', { id: job.id, job });
+        } else {
+          navigation.navigate('Signup', { 
+            message: 'Please sign up to access all features and view job details. Signing up is completely free!' 
+          });
+        }
+      }}
     >
       {/* Header with company badge */}
       <View style={styles.jobCardSimpleHeader}>
@@ -5993,10 +7848,16 @@ function HomeScreen({ navigation }: any) {
             
             {!isMobile && (
               <View style={styles.modernNavigation}>
-                <TouchableOpacity style={styles.modernNavItem}>
+                <TouchableOpacity 
+                  style={styles.modernNavItem}
+                  onPress={() => navigation.navigate('Jobs')}
+                >
                   <Text style={dynamicStyles.modernNavText}>Jobs</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.modernNavItem}>
+                <TouchableOpacity 
+                  style={styles.modernNavItem}
+                  onPress={() => navigation.navigate('Companies')}
+                >
                   <Text style={dynamicStyles.modernNavText}>Companies</Text>
                 </TouchableOpacity>
               </View>
@@ -6028,16 +7889,95 @@ function HomeScreen({ navigation }: any) {
               </View>
             )}
             
-            {!isMobile && (
+            {!isMobile && !user && (
               <TouchableOpacity style={styles.modernSecondaryButton} onPress={handleLogin}>
                 <Text style={styles.modernSecondaryButtonText}>{t.login}</Text>
               </TouchableOpacity>
             )}
             
-            <TouchableOpacity style={styles.modernPrimaryButton} onPress={() => navigation.navigate('Signup')}>
-              <Icon name="person-add" size={18} color={colors.white} />
-              <Text style={styles.modernPrimaryButtonText}>{t.signUp}</Text>
-            </TouchableOpacity>
+            {!user && (
+              <TouchableOpacity style={styles.modernPrimaryButton} onPress={() => navigation.navigate('Signup')}>
+                <Icon name="person-add" size={18} color={colors.white} />
+                <Text style={styles.modernPrimaryButtonText}>{t.signUp}</Text>
+              </TouchableOpacity>
+            )}
+            
+            {user && (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {/* User Profile */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {userData?.profilePicture ? (
+                    <Image 
+                      source={{ uri: userData.profilePicture }} 
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        borderWidth: 2,
+                        borderColor: colors.beeYellow,
+                      }}
+                    />
+                  ) : (
+                    <View style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: colors.beeYellow,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Text style={{
+                        fontSize: 16,
+                        fontWeight: '600',
+                        color: colors.deepNavy,
+                      }}>
+                        {(userData?.displayName || user.email || 'U')[0].toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
+                  {!isMobile && (
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colors.deepNavy,
+                      fontFamily: 'Inter-SemiBold',
+                    }}>
+                      {userData?.displayName || user.email?.split('@')[0] || 'User'}
+                    </Text>
+                  )}
+                </View>
+                
+                {/* Logout Button */}
+                <TouchableOpacity 
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.danger,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                  onPress={async () => {
+                    await signOut(auth);
+                    navigation.navigate('Home');
+                  }}
+                >
+                  <Icon name="logout" size={18} color={colors.danger} />
+                  {!isMobile && (
+                    <Text style={{
+                      fontSize: 14,
+                      fontWeight: '600',
+                      color: colors.danger,
+                      fontFamily: 'Inter-SemiBold',
+                    }}>
+                      Logout
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            )}
           </View>
         </View>
       </View>
@@ -6120,9 +8060,26 @@ function HomeScreen({ navigation }: any) {
 
               <View style={styles.mobileMenuDivider} />
 
-              <TouchableOpacity style={styles.mobileMenuItem}>
+              <TouchableOpacity 
+                style={styles.mobileMenuItem}
+                onPress={() => {
+                  setIsMobileMenuOpen(false);
+                  navigation.navigate('Jobs');
+                }}
+              >
                 <Icon name="work" size={20} color={colors.beeYellow} />
                 <Text style={dynamicStyles.mobileMenuItemText}>Jobs</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={styles.mobileMenuItem}
+                onPress={() => {
+                  setIsMobileMenuOpen(false);
+                  navigation.navigate('Companies');
+                }}
+              >
+                <Icon name="business" size={20} color={colors.beeYellow} />
+                <Text style={dynamicStyles.mobileMenuItemText}>Companies</Text>
               </TouchableOpacity>
               
               <TouchableOpacity style={styles.mobileMenuItem}>
@@ -6376,9 +8333,17 @@ function HomeScreen({ navigation }: any) {
             <View style={styles.viewMoreContainer}>
               <TouchableOpacity 
                 style={styles.viewMoreButton}
-                onPress={handleLogin}
+                onPress={() => {
+                  if (user) {
+                    navigation.navigate('Jobs');
+                  } else {
+                    navigation.navigate('Signup', { 
+                      message: 'Please sign up to access all features and browse all jobs. Signing up is completely free!' 
+                    });
+                  }
+                }}
               >
-                <Text style={styles.viewMoreButtonText}>Login and View More Jobs</Text>
+                <Text style={styles.viewMoreButtonText}>{user ? 'View All Jobs' : 'Login and View More Jobs'}</Text>
                 <Icon name="arrow-forward" size={20} color={colors.white} />
               </TouchableOpacity>
             </View>
@@ -6482,11 +8447,11 @@ function HomeScreen({ navigation }: any) {
                     >
                       <Icon name="facebook" size={20} color={colors.white} />
                     </TouchableOpacity>
-                    <TouchableOpacity style={styles.footerSocialButton}>
-                      <Icon name="telegram" size={20} color={colors.white} />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.footerSocialButton}>
-                      <Icon name="language" size={20} color={colors.white} />
+                    <TouchableOpacity 
+                      style={styles.footerSocialButton}
+                      onPress={() => Linking.openURL('https://www.youtube.com/@kelem510')}
+                    >
+                      <Icon name="youtube" size={20} color={colors.white} />
                     </TouchableOpacity>
                   </View>
                   
@@ -6514,7 +8479,15 @@ function HomeScreen({ navigation }: any) {
                   <Text style={styles.footerColumnTitle}>For Job Seekers</Text>
                   <TouchableOpacity 
                     style={styles.footerLink}
-                    onPress={handleLogin}
+                    onPress={() => {
+                      if (user) {
+                        navigation.navigate('Jobs');
+                      } else {
+                        navigation.navigate('Signup', { 
+                          message: 'Please sign up to access all features and browse all jobs. Signing up is completely free!' 
+                        });
+                      }
+                    }}
                   >
                     <Text style={styles.footerLinkText}>Browse Jobs</Text>
                   </TouchableOpacity>
@@ -7391,6 +9364,11 @@ const styles = StyleSheet.create({
     gap: 16,
     flex: 1,
   },
+  toolbarLogo: {
+    width: 36,
+    height: 36,
+    marginRight: 8,
+  },
   jobsToolbarRight: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -7399,6 +9377,11 @@ const styles = StyleSheet.create({
   toolbarNavButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
+  },
+  toolbarBookmarksButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   toolbarNavButtonText: {
     fontSize: 14,
@@ -7500,6 +9483,24 @@ const styles = StyleSheet.create({
   toolbarSettingsButton: {
     padding: 8,
   },
+  toolbarLogoutButton: {
+    padding: 8,
+  },
+  toolbarProfilePicture: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: lightColors.beeYellow,
+  },
+  toolbarProfilePlaceholder: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: lightColors.beeYellow,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
   toolbarLoginButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -7588,8 +9589,117 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: lightColors.cream,
   },
+  settingsSplitContainer: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  settingsSidebar: {
+    flex: 1,
+    borderRightWidth: 1,
+    borderRightColor: lightColors.lightGray,
+    minWidth: 280,
+    maxWidth: 320,
+  },
+  // Modern Profile Header
+  modernProfileHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    gap: 12,
+    borderBottomWidth: 1,
+    marginBottom: 8,
+  },
+  modernProfileImage: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+  },
+  modernProfileImagePlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernProfileInfo: {
+    flex: 1,
+  },
+  modernProfileName: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  modernProfileEmail: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+  },
+  // Modern Menu Items
+  modernMenuContainer: {
+    paddingVertical: 8,
+  },
+  modernMenuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    gap: 12,
+    borderLeftWidth: 3,
+    borderLeftColor: 'transparent',
+  },
+  modernMenuItemActive: {
+    borderLeftWidth: 3,
+  },
+  modernMenuTextContainer: {
+    flex: 1,
+  },
+  modernMenuTitle: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+  },
+  modernMenuTitleActive: {
+    fontWeight: '600',
+  },
+  // Modern Logout Button
+  modernLogoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 16,
+    marginTop: 16,
+    marginHorizontal: 20,
+    gap: 8,
+    borderTopWidth: 1,
+  },
+  modernLogoutText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  settingsContentArea: {
+    flex: 4,
+  },
+  settingsContentScroll: {
+    flex: 1,
+  },
+  settingsContentSection: {
+    padding: 32,
+  },
+  settingsContentTitle: {
+    fontSize: 32,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  settingsContentSubtitle: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 32,
+  },
   settingsSection: {
-    padding: 24,
+    gap: 16,
   },
   settingsSectionTitle: {
     fontSize: 20,
@@ -7653,16 +9763,22 @@ const styles = StyleSheet.create({
   },
   settingsSaveButton: {
     backgroundColor: lightColors.beeYellow,
-    borderRadius: 12,
-    padding: 16,
-    margin: 24,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 24,
+    marginRight: 24,
+    marginBottom: 24,
+    marginTop: 16,
+    alignSelf: 'flex-end',
     alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 120,
   },
   settingsSaveButtonDisabled: {
     opacity: 0.6,
   },
   settingsSaveButtonText: {
-    fontSize: 16,
+    fontSize: 14,
     fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     fontWeight: '600',
@@ -7761,6 +9877,10 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     outlineStyle: 'none',
   },
+  settingsTextAreaInput: {
+    minHeight: 100,
+    paddingTop: 12,
+  },
   settingsTextInputDisabled: {
     opacity: 0.6,
   },
@@ -7799,6 +9919,116 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontFamily: fonts.regular,
     fontWeight: '600',
+  },
+  // Modern Profile Section Styles
+  modernProfilePictureSection: {
+    alignItems: 'center',
+    marginBottom: 32,
+    gap: 16,
+  },
+  modernProfilePicturePreview: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+  },
+  modernProfilePicturePlaceholder: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 8,
+  },
+  modernUploadButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  modernInputCard: {
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  modernInputLabel: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 12,
+  },
+  modernTextInput: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    padding: 14,
+    borderRadius: 8,
+    outlineStyle: 'none',
+  },
+  modernTextArea: {
+    minHeight: 120,
+    paddingTop: 14,
+  },
+  modernTextInputDisabled: {
+    opacity: 0.6,
+  },
+  modernInputHint: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    marginTop: 8,
+  },
+  modernSaveButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 8,
+    marginTop: 16,
+    alignSelf: 'flex-start',
+  },
+  modernSaveButtonDisabled: {
+    opacity: 0.6,
+  },
+  modernSaveButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  // Modern Toggle Styles
+  modernToggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modernToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+  },
+  modernIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernToggleTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  modernToggleSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
   },
   // Appearance Settings Styles
   settingsToggleItem: {
@@ -7862,6 +10092,99 @@ const styles = StyleSheet.create({
   settingsSelectionText: {
     fontSize: 16,
     fontFamily: fonts.regular,
+  },
+  // Interests/Categories Styles
+  settingsCategoriesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginTop: 16,
+  },
+  settingsCategoryChip: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  settingsCategoryChipText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+  },
+  // Subscription Styles
+  settingsCurrentPlanCard: {
+    padding: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 16,
+  },
+  settingsCurrentPlanName: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  settingsCurrentPlanPrice: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+  },
+  settingsPlanCard: {
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+  },
+  settingsPlanHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  settingsPlanName: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingsPlanPrice: {
+    fontSize: 20,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+  },
+  settingsPlanFeatures: {
+    gap: 10,
+    marginBottom: 16,
+  },
+  settingsPlanFeature: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  settingsPlanFeatureText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    flex: 1,
+  },
+  settingsUpgradeButton: {
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  settingsUpgradeButtonText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  settingsCurrentBadge: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+  },
+  settingsCurrentBadgeText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
   },
   // Subscription Styles
   currentPlanCard: {
@@ -7979,13 +10302,737 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: lightColors.lightGray,
   },
+  jobsContentWithSidebar: {
+    flexDirection: 'row',
+    padding: 24,
+    gap: 24,
+    alignItems: 'flex-start',
+  },
+  jobsGridSection: {
+    flex: 8,
+    minWidth: 0,
+  },
+  filterSidebar: {
+    flex: 1,
+    minWidth: 250,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  filterSidebarTitle: {
+    fontSize: 18,
+    fontFamily: fonts.semibold,
+    color: lightColors.deepNavy,
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: lightColors.beeYellow,
+  },
+  filterSidebarSection: {
+    marginBottom: 20,
+  },
+  filterSidebarLabel: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.warmGray,
+    marginBottom: 10,
+  },
+  filterChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  filterChipSmall: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: lightColors.lightGray,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterChipTextSmall: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
   jobsPageMainTitle: {
     fontSize: 32,
     fontFamily: fonts.regular,
     color: lightColors.deepNavy,
     marginBottom: 24,
+  },
+  
+  // ===== MODERN JOBS PAGE STYLES =====
+  // Hero Section
+  jobsHeroSection: {
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  heroBackgroundImage: {
+    opacity: 0.3,
+  },
+  heroDarkOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(26, 54, 93, 0.85)',
+  },
+  heroBackgroundDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  heroCircle1: {
+    position: 'absolute',
+    width: 400,
+    height: 400,
+    borderRadius: 200,
+    top: -200,
+    right: -100,
+    opacity: 0.5,
+  },
+  heroCircle2: {
+    position: 'absolute',
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    bottom: -100,
+    left: -50,
+    opacity: 0.3,
+  },
+  jobsHeroContent: {
+    maxWidth: 1200,
+    alignSelf: 'center',
+    width: '100%',
+    zIndex: 1,
+  },
+  heroTextContainer: {
+    marginBottom: 32,
+  },
+  jobsHeroTitle: {
+    fontSize: 42,
+    fontFamily: fonts.bold,
+    color: lightColors.white,
+    marginBottom: 12,
+    textAlign: 'center',
+    lineHeight: 52,
+  },
+  jobsHeroSubtitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    color: lightColors.cream,
     textAlign: 'center',
   },
+  heroSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.white,
+    borderRadius: 50,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginBottom: 40,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  searchIconContainer: {
+    paddingLeft: 16,
+    paddingRight: 8,
+  },
+  heroSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+  },
+  searchClearButton: {
+    padding: 8,
+  },
+  searchButton: {
+    paddingHorizontal: 28,
+    paddingVertical: 12,
+    backgroundColor: lightColors.deepNavy,
+    borderRadius: 40,
+    marginLeft: 8,
+  },
+  searchButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.medium,
+    color: lightColors.white,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    alignItems: 'center',
+  },
+  statItem: {
+    alignItems: 'center',
+  },
+  statIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  statNumber: {
+    fontSize: 32,
+    fontFamily: fonts.bold,
+    color: lightColors.beeYellow,
+  },
+  statLabel: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.cream,
+    marginTop: 4,
+  },
+  statDivider: {
+    width: 1,
+    height: 80,
+    backgroundColor: lightColors.cream + '40',
+  },
+
+  // Category Pills
+  categoriesSection: {
+    paddingVertical: 20,
+    paddingHorizontal: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: lightColors.lightGray,
+  },
+  categoriesScrollContent: {
+    paddingRight: 24,
+  },
+  categoryPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    marginRight: 12,
+    backgroundColor: lightColors.cream,
+    borderRadius: 25,
+    borderWidth: 1,
+    gap: 8,
+  },
+  categoryPillText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+
+  // Results Header
+  resultsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  resultsLeftSection: {
+    flex: 1,
+    minWidth: 250,
+  },
+  resultsRightSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  resultsCount: {
+    fontSize: 20,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+  },
+  activeFiltersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  activeFilterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    gap: 6,
+  },
+  activeFilterText: {
+    fontSize: 12,
+    fontFamily: fonts.medium,
+  },
+  sortContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sortLabel: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: lightColors.cream,
+    borderRadius: 8,
+  },
+  sortButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+  viewToggle: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  viewToggleButton: {
+    padding: 10,
+    borderRadius: 8,
+  },
+
+  // Modern Job Card - Enhanced
+  modernJobCard: {
+    flex: 1,
+    maxWidth: '48%',
+    backgroundColor: lightColors.white,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: lightColors.lightGray + '40',
+    position: 'relative',
+  },
+  modernJobCardList: {
+    flex: 1,
+    maxWidth: '100%',
+    width: '100%',
+  },
+  featuredJobCard: {
+    borderColor: lightColors.beeYellow,
+    borderWidth: 2,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+  },
+  featuredBadge: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 12,
+    gap: 4,
+    zIndex: 1,
+  },
+  featuredBadgeText: {
+    fontSize: 11,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  modernCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  cardHeaderActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  companyLogo: {
+    width: 52,
+    height: 52,
+    borderRadius: 13,
+    backgroundColor: lightColors.deepNavy,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  companyLogoText: {
+    fontSize: 22,
+    fontFamily: fonts.bold,
+    color: lightColors.white,
+  },
+  bookmarkButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernCardBody: {
+    marginBottom: 16,
+  },
+  modernJobTitle: {
+    fontSize: 19,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+    lineHeight: 26,
+  },
+  modernCompanyName: {
+    fontSize: 15,
+    fontFamily: fonts.medium,
+    color: lightColors.warmGray,
+    marginBottom: 14,
+  },
+  tagsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 14,
+  },
+  modernTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 4,
+  },
+  modernTagText: {
+    fontSize: 12,
+    fontFamily: fonts.medium,
+  },
+  modernMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modernMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  modernMetaText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    flex: 1,
+  },
+  salarySection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: lightColors.success + '10',
+    borderRadius: 8,
+    gap: 6,
+  },
+  salaryText: {
+    fontSize: 15,
+    fontFamily: fonts.bold,
+    color: lightColors.success,
+  },
+  modernCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 16,
+    borderTopWidth: 1,
+  },
+  jobDateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modernJobDate: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  modernApplyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    backgroundColor: lightColors.deepNavy,
+    borderRadius: 8,
+    gap: 6,
+  },
+  modernApplyText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.white,
+  },
+
+  // Modern Grid
+  modernJobsGrid: {
+    paddingBottom: 20,
+  },
+  modernJobsRow: {
+    justifyContent: 'flex-start',
+    gap: 20,
+    marginBottom: 0,
+  },
+
+  // Modern Loading & Empty States
+  modernLoadingContainer: {
+    paddingVertical: 100,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modernLoadingText: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    marginTop: 16,
+  },
+  modernEmptyState: {
+    paddingVertical: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyStateIcon: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  emptyStateTitle: {
+    fontSize: 24,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    marginBottom: 12,
+  },
+  emptyStateDescription: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 40,
+  },
+  emptyStateButton: {
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    backgroundColor: lightColors.deepNavy,
+    borderRadius: 25,
+  },
+  emptyStateButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.medium,
+    color: lightColors.white,
+  },
+
+  // Modern Pagination
+  modernPagination: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    marginTop: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  modernPaginationButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    gap: 6,
+  },
+  modernPaginationButtonDisabled: {
+    opacity: 0.4,
+  },
+  modernPaginationButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+  modernPaginationNumbers: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  modernPageNumber: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernPageNumberText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+
+  // Modern Filter Sidebar - Revamped
+  filterHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingBottom: 20,
+    borderBottomWidth: 2,
+    borderBottomColor: lightColors.lightGray,
+    gap: 14,
+  },
+  filterTitle: {
+    fontSize: 24,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    letterSpacing: -0.5,
+  },
+  clearFiltersButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    marginBottom: 24,
+    borderRadius: 10,
+    gap: 8,
+    backgroundColor: lightColors.softBlue + '15',
+    borderWidth: 1,
+    borderColor: lightColors.softBlue + '30',
+    shadowColor: lightColors.softBlue,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  clearFiltersText: {
+    fontSize: 14,
+    fontFamily: fonts.bold,
+    color: lightColors.softBlue,
+    letterSpacing: 0.3,
+  },
+  filterGroup: {
+    marginBottom: 28,
+    backgroundColor: lightColors.cream + '80',
+    borderRadius: 14,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: lightColors.lightGray + '60',
+  },
+  filterGroupHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+  },
+  filterGroupTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  filterGroupIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  expandIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: lightColors.cream,
+  },
+  filterGroupTitle: {
+    fontSize: 17,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    letterSpacing: -0.3,
+  },
+  filterOptions: {
+    gap: 10,
+  },
+  filterOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: lightColors.lightGray + '60',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 1,
+  },
+  filterOptionActive: {
+    shadowColor: lightColors.deepNavy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  filterOptionIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  filterOptionText: {
+    fontSize: 15,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+    flex: 1,
+  },
+  checkmarkCircle: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: lightColors.beeYellow,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 'auto',
+  },
+  
+  // ===== END MODERN STYLES =====
+  
   categoriesScrollView: {
     marginTop: 16,
   },
@@ -8009,6 +11056,39 @@ const styles = StyleSheet.create({
   },
   categoryFilterChipTextActive: {
     color: lightColors.deepNavy,
+  },
+  // Additional Filters
+  additionalFiltersContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 8,
+    backgroundColor: lightColors.white,
+  },
+  filterRow: {
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  filterLabel: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.warmGray,
+    marginRight: 12,
+    minWidth: 80,
+  },
+  filterChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    marginRight: 8,
+    backgroundColor: lightColors.lightGray,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
   },
   // Popular filters (landing page recent jobs)
   popularFiltersContainer: {
@@ -8545,12 +11625,15 @@ const styles = StyleSheet.create({
     marginTop: 16,
   },
   paginationContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: 'column',
+    justifyContent: 'center',
     alignItems: 'center',
+    gap: 16,
     marginTop: 20,
-    paddingHorizontal: 16,
-    paddingVertical: 16,
+    marginHorizontal: 24,
+    marginBottom: 24,
+    paddingHorizontal: 24,
+    paddingVertical: 24,
     backgroundColor: lightColors.white,
     borderRadius: 12,
     borderWidth: 1,
@@ -8564,10 +11647,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: lightColors.beeYellow,
+    borderColor: lightColors.lightGray,
   },
   paginationButtonDisabled: {
-    opacity: 0.3,
+    opacity: 0.4,
   },
   paginationInfo: {
     alignItems: 'center',
@@ -8576,6 +11659,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: fonts.regular,
     color: lightColors.deepNavy,
+    fontWeight: '500',
+  },
+  paginationControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  paginationNumbers: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  paginationNumberButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    backgroundColor: lightColors.cream,
+    borderColor: lightColors.lightGray,
+  },
+  paginationNumberText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
   },
   paginationSubtext: {
     fontSize: 12,
@@ -9322,9 +12430,14 @@ const styles = StyleSheet.create({
     width: 300,
     backgroundColor: lightColors.white,
     borderLeftWidth: 1,
-    borderLeftColor: lightColors.sidebarBorder,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    borderLeftColor: lightColors.lightGray + '80',
+    paddingVertical: 24,
+    paddingHorizontal: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: -2, height: 0 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 3,
   },
   filterTitle: {
     fontSize: 18,
@@ -11002,6 +14115,419 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
+
+  // ===== MODERN JOB DETAILS STYLES =====
+  // Modern Job Header Card
+  modernJobHeaderCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 16,
+    padding: 26,
+    marginBottom: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernJobHeaderTop: {
+    flexDirection: 'row',
+    marginBottom: 22,
+  },
+  modernJobDetailsIconContainer: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modernCompanyLogo: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernCompanyLogoPlaceholder: {
+    width: 72,
+    height: 72,
+    borderRadius: 14,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernJobHeaderInfo: {
+    flex: 1,
+    marginLeft: 18,
+  },
+  modernJobDetailsTitle: {
+    fontSize: 22,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+    lineHeight: 30,
+  },
+  modernJobDetailsCompany: {
+    fontSize: 16,
+    fontFamily: fonts.medium,
+    color: lightColors.softBlue,
+    marginBottom: 10,
+  },
+  modernJobMetaRow: {
+    flexDirection: 'row',
+    gap: 16,
+    flexWrap: 'wrap',
+  },
+  modernJobMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  modernJobPostedTime: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  modernJobDetailsBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 18,
+  },
+  modernJobDetailsBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.cream,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: lightColors.lightGray,
+  },
+  modernJobDetailsBadgeText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+  modernQuickStatsContainer: {
+    flexDirection: 'row',
+    gap: 24,
+    marginTop: 18,
+    paddingTop: 18,
+    borderTopWidth: 1,
+    borderTopColor: '#e9ecef',
+  },
+  modernQuickStat: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  modernStatIconCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: lightColors.white,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernQuickStatText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+  modernMatchScoreCard: {
+    backgroundColor: '#fff8e1',
+    borderRadius: 14,
+    padding: 18,
+    marginTop: 18,
+    borderWidth: 1.5,
+    borderColor: lightColors.beeYellow,
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  modernMatchScoreHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  modernMatchScoreLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  modernMatchScoreTitle: {
+    fontSize: 16,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+  },
+  modernMatchScoreSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+  },
+  modernMatchScoreBadge: {
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+  },
+  modernMatchScorePercentage: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+  },
+  modernMatchScoreBar: {
+    height: 8,
+    backgroundColor: lightColors.white,
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 12,
+  },
+  modernMatchScoreProgress: {
+    height: '100%',
+    backgroundColor: lightColors.beeYellow,
+    borderRadius: 4,
+  },
+  modernMatchScoreDescription: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    lineHeight: 20,
+  },
+  modernSalaryHighlight: {
+    backgroundColor: '#e8f5e9',
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 18,
+    borderWidth: 1,
+    borderColor: '#c3e6cb',
+  },
+  modernSalaryHighlightText: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    color: lightColors.success,
+  },
+
+  // Modern Section Styles
+  modernJobDetailsSection: {
+    backgroundColor: lightColors.white,
+    borderRadius: 16,
+    padding: 24,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernSectionHeaderContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 18,
+  },
+  modernSectionIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: lightColors.cream,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#e9ecef',
+  },
+  modernJobDetailsSectionHeader: {
+    fontSize: 20,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+  },
+  modernContentCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 0,
+  },
+  modernJobDetailsDescription: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    lineHeight: 24,
+  },
+
+  // Modern Info Cards
+  modernJobDetailsInfoSection: {
+    backgroundColor: lightColors.cream,
+    borderRadius: 12,
+    padding: 16,
+    gap: 14,
+  },
+  modernJobDetailsInfoCard: {
+    backgroundColor: lightColors.white,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    gap: 14,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  modernInfoCardIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  modernJobDetailsInfoContent: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  modernJobDetailsInfoLabel: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    color: lightColors.warmGray,
+    marginBottom: 4,
+  },
+  modernJobDetailsInfoValue: {
+    fontSize: 16,
+    fontFamily: fonts.bold,
+    color: lightColors.deepNavy,
+  },
+
+  // Modern Benefits List
+  modernBenefitsList: {
+    gap: 14,
+  },
+  modernBenefitItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  modernBenefitText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    color: lightColors.deepNavy,
+    lineHeight: 24,
+  },
+
+  // Modern Tags and Skills
+  modernJobTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  modernSkillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#e8f5e9',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: lightColors.success,
+  },
+  modernSkillTagText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+  modernPreferredSkillTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fff8e1',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: lightColors.honeyGold,
+  },
+  modernPreferredSkillTagText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+  modernJobTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.cream,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 7,
+    borderWidth: 1,
+    borderColor: lightColors.beeYellow,
+  },
+  modernJobTagText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+    color: lightColors.deepNavy,
+  },
+
+  // Modern Sticky Apply Button
+  modernStickyApplyButton: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: lightColors.white,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingBottom: 24,
+    borderTopWidth: 1,
+    borderTopColor: lightColors.lightGray,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -3 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  modernJobDetailsApplyButton: {
+    backgroundColor: lightColors.deepNavy,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    shadowColor: lightColors.deepNavy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  modernJobDetailsApplyButtonText: {
+    fontSize: 17,
+    fontFamily: fonts.bold,
+    color: lightColors.white,
+    letterSpacing: 0.3,
+  },
+  // ===== END MODERN JOB DETAILS STYLES =====
+
   // Telegram Source Styles
   telegramSourceSection: {
     margin: 16,
@@ -11238,6 +14764,234 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontFamily: fonts.regular,
     color: lightColors.white,
+  },
+
+  // Bookmarks Screen Styles
+  bookmarksHeroSection: {
+    paddingVertical: 60,
+    paddingHorizontal: 24,
+    position: 'relative',
+    overflow: 'hidden',
+    alignItems: 'center',
+  },
+  bookmarksHeroContent: {
+    alignItems: 'center',
+    zIndex: 1,
+  },
+  bookmarksHeroIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: 'rgba(247, 183, 49, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  bookmarksHeroTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  bookmarksHeroSubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  bookmarksContentContainer: {
+    padding: 24,
+    marginTop: -20,
+  },
+  bookmarksLoadingContainer: {
+    padding: 60,
+    alignItems: 'center',
+    gap: 16,
+  },
+  bookmarksLoadingText: {
+    fontSize: 16,
+  },
+  bookmarksEmptyState: {
+    borderRadius: 16,
+    padding: 60,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  bookmarksEmptyIconCircle: {
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 32,
+  },
+  bookmarksEmptyTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 12,
+  },
+  bookmarksEmptySubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 32,
+    maxWidth: 400,
+  },
+  bookmarksEmptyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 8,
+  },
+  bookmarksEmptyButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  bookmarksGridContainer: {
+    gap: 24,
+  },
+  bookmarksGridHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  bookmarksGridTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  bookmarksGridStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  bookmarksGridStatsText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  bookmarksGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 20,
+  },
+  modernBookmarkCard: {
+    width: '48%',
+    minWidth: 280,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.05)',
+  },
+  modernBookmarkCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 16,
+  },
+  modernBookmarkLogoContainer: {
+    width: 56,
+    height: 56,
+  },
+  modernBookmarkLogo: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+  },
+  modernBookmarkLogoPlaceholder: {
+    width: 56,
+    height: 56,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernBookmarkLogoText: {
+    fontSize: 24,
+    fontWeight: '700',
+  },
+  modernRemoveBookmarkButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modernBookmarkCardBody: {
+    gap: 12,
+  },
+  modernBookmarkJobTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    lineHeight: 24,
+  },
+  modernBookmarkCompany: {
+    fontSize: 14,
+  },
+  modernBookmarkTags: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  modernBookmarkTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    gap: 4,
+    borderWidth: 1,
+  },
+  modernBookmarkTagText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  modernBookmarkSalary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  modernBookmarkSalaryText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  modernBookmarkCardFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+  },
+  modernBookmarkDate: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  modernBookmarkDateText: {
+    fontSize: 12,
+  },
+  modernBookmarkApplyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+    gap: 6,
+  },
+  modernBookmarkApplyText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
 });
 
