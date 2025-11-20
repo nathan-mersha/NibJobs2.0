@@ -31,5 +31,17 @@ service firebase.storage {
       allow read: if true;
       allow write: if request.auth != null; // Authenticated users can upload channel images
     }
+    
+    // Company logos
+    match /companyLogos/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null; // Authenticated users can upload company logos
+    }
+    
+    // User CVs and documents
+    match /cvs/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null; // Authenticated users can upload CVs
+    }
   }
 }

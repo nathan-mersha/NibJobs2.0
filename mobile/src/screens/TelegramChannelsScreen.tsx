@@ -445,7 +445,7 @@ export default function TelegramChannelsScreen({ colors = defaultColors }: { col
                   {scrapingStatus === 'scraping' ? (
                     <ActivityIndicator size="small" color={colors.white} />
                   ) : (
-                    <Icon name="play-circle" size={24} color={colors.white} />
+                    <Icon name="play-arrow" size={24} color={colors.white} />
                   )}
                 </View>
                 <Text style={[styles.actionButtonText, { color: colors.deepNavy }]}>

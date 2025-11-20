@@ -24,49 +24,82 @@ export {
 
 // Export email notification functions
 import * as functions from 'firebase-functions';
-import { sendRoleChangeEmail, sendSubscriptionChangeEmail } from './emailService';
+import { sendRoleChangeEmail, sendSubscriptionChangeEmail, sendCompanyVerificationEmail } from './emailService';
 
-export const notifyRoleChange = functions.https.onCall(async (data, context) => {
-  // Verify the caller is authenticated and is an admin
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-  }
+export const notifyRoleChange = functions
+  .runWith({
+    secrets: ['GMAIL_USER', 'GMAIL_APP_PASSWORD']
+  })
+  .https.onCall(async (data, context) => {
+    // Verify the caller is authenticated and is an admin
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-  const { userEmail, userName, oldRole, newRole } = data;
+    const { userEmail, userName, oldRole, newRole } = data;
 
-  if (!userEmail || !userName || !oldRole || !newRole) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
-  }
+    if (!userEmail || !userName || !oldRole || !newRole) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
+    }
 
-  try {
-    await sendRoleChangeEmail(userEmail, userName, oldRole, newRole);
-    return { success: true, message: 'Role change email sent successfully' };
-  } catch (error) {
-    functions.logger.error('Error sending role change email:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to send email');
-  }
-});
+    try {
+      await sendRoleChangeEmail(userEmail, userName, oldRole, newRole);
+      return { success: true, message: 'Role change email sent successfully' };
+    } catch (error) {
+      functions.logger.error('Error sending role change email:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to send email');
+    }
+  });
 
-export const notifySubscriptionChange = functions.https.onCall(async (data, context) => {
-  // Verify the caller is authenticated and is an admin
-  if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
-  }
+export const notifySubscriptionChange = functions
+  .runWith({
+    secrets: ['GMAIL_USER', 'GMAIL_APP_PASSWORD']
+  })
+  .https.onCall(async (data, context) => {
+    // Verify the caller is authenticated and is an admin
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
 
-  const { userEmail, userName, oldPlan, newPlan } = data;
+    const { userEmail, userName, oldPlan, newPlan } = data;
 
-  if (!userEmail || !userName || !oldPlan || !newPlan) {
-    throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
-  }
+    if (!userEmail || !userName || !oldPlan || !newPlan) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
+    }
 
-  try {
-    await sendSubscriptionChangeEmail(userEmail, userName, oldPlan, newPlan);
-    return { success: true, message: 'Subscription change email sent successfully' };
-  } catch (error) {
-    functions.logger.error('Error sending subscription change email:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to send email');
-  }
-});
+    try {
+      await sendSubscriptionChangeEmail(userEmail, userName, oldPlan, newPlan);
+      return { success: true, message: 'Subscription change email sent successfully' };
+    } catch (error) {
+      functions.logger.error('Error sending subscription change email:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to send email');
+    }
+  });
+
+export const notifyCompanyVerification = functions
+  .runWith({
+    secrets: ['GMAIL_USER', 'GMAIL_APP_PASSWORD']
+  })
+  .https.onCall(async (data, context) => {
+    // Verify the caller is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'User must be authenticated');
+    }
+
+    const { userEmail, userName, companyName } = data;
+
+    if (!userEmail || !userName || !companyName) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required parameters');
+    }
+
+    try {
+      await sendCompanyVerificationEmail(userEmail, userName, companyName);
+      return { success: true, message: 'Company verification email sent successfully' };
+    } catch (error) {
+      functions.logger.error('Error sending company verification email:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to send email');
+    }
+  });
 
 
 

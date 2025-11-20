@@ -626,3 +626,138 @@ export async function sendSubscriptionChangeEmail(
     throw error;
   }
 }
+
+/**
+ * Generate HTML for company verification submission email
+ */
+function generateCompanyVerificationHTML(userName: string, companyName: string): string {
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background-color: white;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 2px solid #f0f0f0;
+      margin-bottom: 30px;
+    }
+    .logo {
+      font-size: 28px;
+      font-weight: bold;
+      color: #F4C430;
+      margin-bottom: 10px;
+    }
+    .icon {
+      font-size: 48px;
+      margin: 20px 0;
+    }
+    .content {
+      padding: 20px 0;
+    }
+    .highlight {
+      background-color: #fef3c7;
+      padding: 15px;
+      border-radius: 6px;
+      margin: 20px 0;
+      border-left: 4px solid #F4C430;
+    }
+    .footer {
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #f0f0f0;
+      text-align: center;
+      color: #6b7280;
+      font-size: 12px;
+    }
+    .button {
+      display: inline-block;
+      padding: 12px 24px;
+      background-color: #F4C430;
+      color: #1a1a1a;
+      text-decoration: none;
+      border-radius: 6px;
+      font-weight: bold;
+      margin: 20px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="logo">🐝 NibJobs</div>
+      <h1 style="margin: 0; color: #1a1a1a;">Company Verification Submitted</h1>
+    </div>
+    <div class="icon">🏢</div>
+    <div class="content">
+      <p>Dear ${userName},</p>
+      <p>Thank you for submitting <strong>${companyName}</strong> for verification on NibJobs!</p>
+      <div class="highlight">
+        <p style="margin: 0;"><strong>📋 What happens next?</strong></p>
+        <ul style="margin: 10px 0;">
+          <li>Our admin team will review your company profile</li>
+          <li>We'll verify the information you provided</li>
+          <li>You'll receive a notification once the review is complete</li>
+        </ul>
+      </div>
+      <p>This process typically takes 1-3 business days. We'll notify you via email once your company has been verified.</p>
+      <p>Once approved, you'll be able to:</p>
+      <ul>
+        <li>Post job openings</li>
+        <li>Manage applications</li>
+        <li>Access company analytics</li>
+        <li>Build your employer brand</li>
+      </ul>
+      <p>If you have any questions, feel free to reach out to our support team.</p>
+      <p style="margin-top: 30px;">Best regards,<br><strong>The NibJobs Team</strong></p>
+    </div>
+    <div class="footer">
+      <p>© ${new Date().getFullYear()} NibJobs. All rights reserved.</p>
+      <p>Made with ❤️ in Ethiopia</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Send company verification submission email
+ */
+export async function sendCompanyVerificationEmail(
+  userEmail: string,
+  userName: string,
+  companyName: string
+): Promise<void> {
+  try {
+    const transporter = createTransporter();
+    const html = generateCompanyVerificationHTML(userName, companyName);
+
+    await transporter.sendMail({
+      from: `"NibJobs" <${process.env.GMAIL_USER}>`,
+      to: userEmail,
+      subject: `${companyName} - Company Verification Submitted`,
+      html,
+    });
+
+    functions.logger.info(`📧 Company verification email sent to ${userEmail}`);
+  } catch (error) {
+    functions.logger.error('Failed to send company verification email:', error);
+    throw error;
+  }
+}

@@ -5,10 +5,11 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, SafeAreaView, Aler
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut, sendEmailVerification, sendPasswordResetEmail } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, query as dbQuery, orderBy, limit, where, startAfter } from 'firebase/firestore';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, addDoc, query as dbQuery, orderBy, limit, where, startAfter } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import TelegramChannelsScreen from './src/screens/TelegramChannelsScreen';
 import Icon from 'react-native-vector-icons/MaterialIcons';
 import { useAppFonts, fonts } from './src/utils/fonts';
@@ -35,7 +36,7 @@ const lightColors = {
   beeYellow: '#F4C430',
   honeyGold: '#D4AF37',
   darkYellow: '#B8860B',
-  deepNavy: '#1A1B3E',
+  deepNavy: '#000000',
   charcoal: '#2C2C2C',
   cream: '#FFF9E6',
   white: '#FFFFFF',
@@ -46,6 +47,7 @@ const lightColors = {
   danger: '#E74C3C',
   error: '#E74C3C',
   lightPeach: '#FFE5CC',
+  buttonTextOnYellow: '#78350F', // Dark orange text for yellow buttons
   // Modern sidebar colors
   sidebarBg: '#F8FAFC',        // Light gray-blue
   sidebarText: '#475569',      // Slate gray
@@ -58,9 +60,9 @@ const lightColors = {
 
 // Dark theme colors
 const darkColors = {
-  beeYellow: '#FFD700',
-  honeyGold: '#FFA500',
-  darkYellow: '#FF8C00',
+  beeYellow: '#B45309',
+  honeyGold: '#92400E',
+  darkYellow: '#78350F',
   deepNavy: '#E2E8F0',
   charcoal: '#F8F9FA',
   cream: '#1A1D23',
@@ -72,6 +74,7 @@ const darkColors = {
   danger: '#F87171',
   error: '#F87171',
   lightPeach: '#3A2E28',
+  buttonTextOnYellow: '#FFFFFF', // White text for dark orange buttons in dark mode
   // Modern sidebar colors (dark)
   sidebarBg: '#1F2937',
   sidebarText: '#9CA3AF',
@@ -169,7 +172,54 @@ const translations = {
     darkMode: 'Dark Mode',
     language: 'Language',
     downloadPlayStore: 'Play Store',
-    downloadAppStore: 'App Store'
+    downloadAppStore: 'App Store',
+    // Jobs page
+    employmentType: 'Employment Type',
+    workMode: 'Work Mode',
+    fullTime: 'Full-time',
+    partTime: 'Part-time',
+    contract: 'Contract',
+    remote: 'Remote',
+    onSite: 'On-site',
+    hybrid: 'Hybrid',
+    applyNow: 'Apply Now',
+    shareJob: 'Share Job',
+    viewDetails: 'View Details',
+    salaryRange: 'Salary Range',
+    posted: 'Posted',
+    ago: 'ago',
+    noJobsFound: 'No jobs found',
+    filterJobs: 'Filter Jobs',
+    sortBy: 'Sort By',
+    clearAll: 'Clear All',
+    // Companies page
+    companies: 'Companies',
+    viewAll: 'View All',
+    noCompaniesFound: 'No companies found',
+    // Settings page
+    settings: 'Settings',
+    profile: 'Profile',
+    notifications: 'Notifications',
+    theme: 'Theme',
+    logout: 'Logout',
+    about: 'About',
+    privacy: 'Privacy Policy',
+    terms: 'Terms of Service',
+    // Bookmarks
+    bookmarks: 'Bookmarks',
+    bookmark: 'Bookmark',
+    save: 'Save',
+    saved: 'Saved',
+    remove: 'Remove',
+    // Common
+    jobs: 'Jobs',
+    search: 'Search',
+    filter: 'Filter',
+    apply: 'Apply',
+    company: 'Company',
+    salary: 'Salary',
+    description: 'Description',
+    requirements: 'Requirements'
   },
   am: { // Amharic
     appTitle: 'ንብ ስራዎች',
@@ -197,7 +247,54 @@ const translations = {
     darkMode: 'ጨለማ ገጽታ',
     language: 'ቋንቋ',
     downloadPlayStore: 'ፕሌይ ስቶር',
-    downloadAppStore: 'አፕ ስቶር'
+    downloadAppStore: 'አፕ ስቶር',
+    // Jobs page
+    employmentType: 'የቅጥር አይነት',
+    workMode: 'የስራ ዘዴ',
+    fullTime: 'ሙሉ ጊዜ',
+    partTime: 'የትርፍ ጊዜ',
+    contract: 'ውል',
+    remote: 'ርቀት',
+    onSite: 'በቦታው',
+    hybrid: 'ድብልቅ',
+    applyNow: 'አሁን ያመልክቱ',
+    shareJob: 'ስራ አጋራ',
+    viewDetails: 'ዝርዝር ይመልከቱ',
+    salaryRange: 'የደመወዝ ክልል',
+    posted: 'የተለጠፈ',
+    ago: 'በፊት',
+    noJobsFound: 'ምንም ስራዎች አልተገኙም',
+    filterJobs: 'ስራዎችን አጣራ',
+    sortBy: 'ደርድር በ',
+    clearAll: 'ሁሉንም አጽዳ',
+    // Companies page
+    companies: 'ኩባንያዎች',
+    viewAll: 'ሁሉንም ይመልከቱ',
+    noCompaniesFound: 'ምንም ኩባንያዎች አልተገኙም',
+    // Settings page
+    settings: 'ቅንብሮች',
+    profile: 'መገለጫ',
+    notifications: 'ማሳወቂያዎች',
+    theme: 'ገጽታ',
+    logout: 'ውጣ',
+    about: 'ስለ',
+    privacy: 'የግላዊነት ፖሊሲ',
+    terms: 'የአገልግሎት ውል',
+    // Bookmarks
+    bookmarks: 'የተቀመጡ',
+    bookmark: 'ምልክት አድርግ',
+    save: 'አስቀምጥ',
+    saved: 'ተቀምጧል',
+    remove: 'አስወግድ',
+    // Common
+    jobs: 'ስራዎች',
+    search: 'ፈልግ',
+    filter: 'አጣራ',
+    apply: 'ያመልክቱ',
+    company: 'ኩባንያ',
+    salary: 'ደመወዝ',
+    description: 'መግለጫ',
+    requirements: 'መስፈርቶች'
   },
   ti: { // Tigrigna
     appTitle: 'ንብ ስራሕቲ',
@@ -225,7 +322,54 @@ const translations = {
     darkMode: 'ጸልማት ገጽታ',
     language: 'ቋንቋ',
     downloadPlayStore: 'ፕሌይ ስቶር',
-    downloadAppStore: 'አፕ ስቶር'
+    downloadAppStore: 'አፕ ስቶር',
+    // Jobs page
+    employmentType: 'ዓይነት ስራሕ',
+    workMode: 'ኣገባብ ስራሕ',
+    fullTime: 'ምሉእ ግዜ',
+    partTime: 'ክፋል ግዜ',
+    contract: 'ሰንዲ',
+    remote: 'ርሑቕ',
+    onSite: 'ኣብ ቦታኡ',
+    hybrid: 'ተደሚሩ',
+    applyNow: 'ሕጂ ኣመልክት',
+    shareJob: 'ስራሕ ኣካፍል',
+    viewDetails: 'ዝርዝር ርኣይ',
+    salaryRange: 'ደሞዝ መጠን',
+    posted: 'ተለጢፉ',
+    ago: 'ቅድሚ',
+    noJobsFound: 'ስራሕቲ ኣይተረኸበን',
+    filterJobs: 'ስራሕቲ ምርጫ',
+    sortBy: 'ደርድር ብ',
+    clearAll: 'ኩሉ ሰርዝ',
+    // Companies page
+    companies: 'ትካላት',
+    viewAll: 'ኩሉ ርኣይ',
+    noCompaniesFound: 'ትካላት ኣይተረኸቡን',
+    // Settings page
+    settings: 'ኣወሃህባ',
+    profile: 'መግለጺ',
+    notifications: 'መጠንቀቕታ',
+    theme: 'ገጽታ',
+    logout: 'ውጻእ',
+    about: 'ብዛዕባ',
+    privacy: 'ፖሊሲ ፕራይቨሲ',
+    terms: 'ውዕል ኣገልግሎት',
+    // Bookmarks
+    bookmarks: 'ዝተቐመጡ',
+    bookmark: 'ምልክት ግበር',
+    save: 'ኣቐምጥ',
+    saved: 'ተቐሚጡ',
+    remove: 'ኣልግስ',
+    // Common
+    jobs: 'ስራሕቲ',
+    search: 'ድለ',
+    filter: 'ምርጫ',
+    apply: 'ኣመልክት',
+    company: 'ትካል',
+    salary: 'ደሞዝ',
+    description: 'መግለጺ',
+    requirements: 'ረቛሒታት'
   },
   or: { // Oromifa
     appTitle: 'Niib Hojii',
@@ -253,7 +397,54 @@ const translations = {
     darkMode: 'Haala Dukkana',
     language: 'Afaan',
     downloadPlayStore: 'Play Store',
-    downloadAppStore: 'App Store'
+    downloadAppStore: 'App Store',
+    // Jobs page
+    employmentType: 'Gosa Hojii',
+    workMode: 'Akkaataa Hojii',
+    fullTime: 'Guutuu Yeroo',
+    partTime: 'Yeroo Muraasa',
+    contract: 'Kontraata',
+    remote: 'Fagoo',
+    onSite: 'Bakka Hojii irratti',
+    hybrid: 'Walitti makame',
+    applyNow: 'Amma iyyannaa galchi',
+    shareJob: 'Hojii qoodaa',
+    viewDetails: 'Bal\'ina ilaali',
+    salaryRange: 'Hangi Mindaa',
+    posted: 'Maxxanfame',
+    ago: 'dura',
+    noJobsFound: 'Hojiin hin argamne',
+    filterJobs: 'Hojii filannoo',
+    sortBy: 'Tartiiba',
+    clearAll: 'Hunda haqxi',
+    // Companies page
+    companies: 'Dhaabbilee',
+    viewAll: 'Hunda ilaali',
+    noCompaniesFound: 'Dhaabbilee hin argamne',
+    // Settings page
+    settings: 'Qindaa\'ina',
+    profile: 'Ibsa',
+    notifications: 'Beeksisa',
+    theme: 'Bifa',
+    logout: 'Ba\'i',
+    about: 'Waa\'ee',
+    privacy: 'Imaammata Dhuunfaa',
+    terms: 'Waliigaltee Tajaajila',
+    // Bookmarks
+    bookmarks: 'Kan Kuufaman',
+    bookmark: 'Mallattoo godhi',
+    save: 'Kuufadhu',
+    saved: 'Kuufameera',
+    remove: 'Haqi',
+    // Common
+    jobs: 'Hojii',
+    search: 'Barbaadi',
+    filter: 'Filannoo',
+    apply: 'Iyyannaa galchi',
+    company: 'Dhaabbata',
+    salary: 'Mindaa',
+    description: 'Ibsa',
+    requirements: 'Ulaagaalee'
   }
 };
 
@@ -778,6 +969,40 @@ function SignupScreen({ navigation, route }: any) {
   
   // Get message from navigation params if available
   const message = route?.params?.message;
+  
+  // Generate username from full name
+  const generateUsernameFromName = (name: string) => {
+    // Remove spaces and special characters, convert to lowercase
+    const cleanName = name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    // Add random 4-digit number
+    const randomNum = Math.floor(1000 + Math.random() * 9000);
+    return `${cleanName}${randomNum}`;
+  };
+  
+  // Ensure username is unique
+  const generateUniqueUsername = async (baseName: string) => {
+    let username = generateUsernameFromName(baseName);
+    let isUnique = false;
+    let attempts = 0;
+    
+    while (!isUnique && attempts < 10) {
+      const usernameQuery = dbQuery(
+        collection(db, 'users'),
+        where('username', '==', username)
+      );
+      const querySnapshot = await getDocs(usernameQuery);
+      
+      if (querySnapshot.empty) {
+        isUnique = true;
+      } else {
+        // Generate new username with different number
+        username = generateUsernameFromName(baseName);
+        attempts++;
+      }
+    }
+    
+    return username;
+  };
 
   const handleSignup = async () => {
     if (!email || !password || !fullName) {
@@ -816,10 +1041,15 @@ function SignupScreen({ navigation, route }: any) {
       
       // Create user document in Firestore matching superadmin schema
       console.log('💾 Creating user profile in Firestore...');
+      
+      // Generate unique username from full name
+      const generatedUsername = await generateUniqueUsername(fullName);
+      
       await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         email: email,
         displayName: fullName,
+        username: generatedUsername,
         role: 'user',
         subscriptionId: 'free',
         subscriptionStatus: 'active',
@@ -869,11 +1099,16 @@ function SignupScreen({ navigation, route }: any) {
       const userDoc = await getDoc(userDocRef);
       
       if (!userDoc.exists()) {
+        // Generate username from Google display name
+        const displayName = user.displayName || 'User';
+        const generatedUsername = await generateUniqueUsername(displayName);
+        
         // Create new user document for first-time Google sign-in
         await setDoc(userDocRef, {
           uid: user.uid,
           email: user.email || '',
           displayName: user.displayName || 'User',
+          username: generatedUsername,
           role: 'reader',
           subscriptionId: 'free',
           subscriptionStatus: 'active',
@@ -1387,9 +1622,25 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           >
             <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
           </TouchableOpacity>
+          {user && userData?.role === 'user' && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyRegistration')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>Be a Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && userData?.role === 'company' && userData?.companyProfile && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyDashboard')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>To Company</Text>
+            </TouchableOpacity>
+          )}
           
           {/* Search Bar */}
-          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.cream }]}>
+          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.lightGray }]}>
             <Icon name="search" size={18} color={colors.warmGray} />
             <TextInput
               style={[styles.toolbarSearchInput, { color: colors.deepNavy }]}
@@ -1403,7 +1654,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
             <TouchableOpacity 
-              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.lightGray }]}
               onPress={() => setShowLanguageMenu(!showLanguageMenu)}
             >
               <Icon name="language" size={20} color={colors.deepNavy} />
@@ -1522,7 +1773,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
                 style={[styles.toolbarSignupButton, { backgroundColor: colors.beeYellow }]}
                 onPress={() => navigation.navigate('Signup')}
               >
-                <Text style={[styles.toolbarSignupButtonText, { color: colors.deepNavy }]}>
+                <Text style={[styles.toolbarSignupButtonText, { color: colors.buttonTextOnYellow }]}>
                   Sign Up
                 </Text>
               </TouchableOpacity>
@@ -1664,7 +1915,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.description && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="description" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Job Description</Text>
@@ -1678,7 +1929,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {/* Key Information Grid - Modern Enhanced */}
           <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
             <View style={styles.modernSectionHeaderContainer}>
-              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                 <Icon name="info" size={20} color={colors.deepNavy} />
               </View>
               <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Key Information</Text>
@@ -1784,7 +2035,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.companyDescription && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="business" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>About {job.company}</Text>
@@ -1799,7 +2050,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.requirements && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="checklist" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Requirements</Text>
@@ -1814,7 +2065,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.responsibilities && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="assignment" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Responsibilities</Text>
@@ -1829,7 +2080,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.benefits && job.benefits.length > 0 && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="card-giftcard" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Benefits & Perks</Text>
@@ -1851,7 +2102,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.requiredSkills && job.requiredSkills.length > 0 && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="emoji-objects" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Required Skills</Text>
@@ -1873,7 +2124,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.preferredSkills && job.preferredSkills.length > 0 && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="star-outline" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Nice to Have</Text>
@@ -1895,7 +2146,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.tags && job.tags.length > 0 && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="local-offer" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Tags</Text>
@@ -1915,7 +2166,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {/* Job Source & Activity - Modern Enhanced */}
           <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
             <View style={styles.modernSectionHeaderContainer}>
-              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+              <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                 <Icon name="info" size={20} color={colors.deepNavy} />
               </View>
               <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Job Source & Activity</Text>
@@ -1997,7 +2248,7 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
           {job.applicationProcess && (
             <View style={[styles.modernJobDetailsSection, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
               <View style={styles.modernSectionHeaderContainer}>
-                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.modernSectionIconCircle, { backgroundColor: colors.lightGray }]}>
                   <Icon name="how-to-reg" size={20} color={colors.deepNavy} />
                 </View>
                 <Text style={[styles.modernJobDetailsSectionHeader, { color: colors.deepNavy }]}>Application Process</Text>
@@ -2040,8 +2291,8 @@ function JobDetailsScreen({ route, navigation, isDarkMode, toggleTheme }: any) {
                 style={[styles.loginPromptButton, { backgroundColor: colors.beeYellow }]}
                 onPress={handleLogin}
               >
-                <Text style={[styles.loginPromptButtonText, { color: colors.deepNavy }]}>Login or Sign Up</Text>
-                <Icon name="arrow-forward" size={18} color={colors.deepNavy} />
+                <Text style={[styles.loginPromptButtonText, { color: colors.buttonTextOnYellow }]}>Login or Sign Up</Text>
+                <Icon name="arrow-forward" size={18} color={colors.buttonTextOnYellow} />
               </TouchableOpacity>
             </View>
           )}
@@ -2201,6 +2452,8 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
   const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageButtonRef = useRef<any>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalJobs, setTotalJobs] = useState(0);
   const [lastVisible, setLastVisible] = useState<any>(null);
@@ -2213,14 +2466,57 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
   
   // View mode state for grid/list toggle
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
   
   const jobsPerPage = 12;
   
   const colors = isDarkMode ? darkColors : lightColors;
+  const t = translations[currentLanguage as keyof typeof translations];
+  
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'am', label: 'አማርኛ' },
+    { code: 'ti', label: 'ትግርኛ' },
+    { code: 'or', label: 'Afaan Oromoo' }
+  ];
+  
+  const getCurrentLanguage = () => {
+    return languageOptions.find(lang => lang.code === currentLanguage) || languageOptions[0];
+  };
+  
+  const toggleLanguageDropdown = () => {
+    if (!showLanguageMenu && languageButtonRef.current) {
+      languageButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+        setDropdownPosition({
+          top: y + height + 5,
+          right: typeof window !== 'undefined' ? window.innerWidth - x - width : 0,
+        });
+      });
+    }
+    setShowLanguageMenu(!showLanguageMenu);
+  };
+  
+  const changeLanguage = async (langCode: string) => {
+    setCurrentLanguage(langCode);
+    setSelectedLanguage(languageOptions.find(lang => lang.code === langCode)?.label || 'English');
+    setShowLanguageMenu(false);
+    try {
+      await AsyncStorage.setItem('selectedLanguage', langCode);
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+    }
+  };
 
   useEffect(() => {
     const initializeScreen = async () => {
       try {
+        // Load saved language
+        const savedLanguage = await AsyncStorage.getItem('selectedLanguage');
+        if (savedLanguage) {
+          setCurrentLanguage(savedLanguage);
+          setSelectedLanguage(languageOptions.find(lang => lang.code === savedLanguage)?.label || 'English');
+        }
+        
         await fetchTotalCount();
         await fetchJobs(1);
         await fetchCategories();
@@ -2510,8 +2806,8 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
         {/* Featured Badge */}
         {isFeatured && (
           <View style={[styles.featuredBadge, { backgroundColor: colors.beeYellow }]}>
-            <Icon name="star" size={14} color={colors.deepNavy} />
-            <Text style={[styles.featuredBadgeText, { color: colors.deepNavy }]}>Featured</Text>
+            <Icon name="star" size={14} color={colors.buttonTextOnYellow} />
+            <Text style={[styles.featuredBadgeText, { color: colors.buttonTextOnYellow }]}>Featured</Text>
           </View>
         )}
 
@@ -2532,7 +2828,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           )}
           <View style={styles.cardHeaderActions}>
             <TouchableOpacity 
-              style={[styles.bookmarkButton, { backgroundColor: colors.cream }]}
+              style={[styles.bookmarkButton, { backgroundColor: colors.lightGray }]}
               onPress={(e) => {
                 e.stopPropagation();
                 handleToggleBookmark(job.id);
@@ -2561,19 +2857,19 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           {/* Tags Row */}
           <View style={styles.tagsRow}>
             {job.contractType && (
-              <View style={[styles.modernTag, { backgroundColor: colors.softBlue + '20', borderColor: colors.softBlue }]}>
+              <View style={[styles.modernTag, { backgroundColor: `${colors.softBlue}20`, borderColor: colors.softBlue }]}>
                 <Icon name="schedule" size={12} color={colors.softBlue} />
                 <Text style={[styles.modernTagText, { color: colors.softBlue }]}>{job.contractType}</Text>
               </View>
             )}
             {job.isRemote && (
-              <View style={[styles.modernTag, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+              <View style={[styles.modernTag, { backgroundColor: `${colors.success}20`, borderColor: colors.success }]}>
                 <Icon name="home-work" size={12} color={colors.success} />
                 <Text style={[styles.modernTagText, { color: colors.success }]}>Remote</Text>
               </View>
             )}
             {job.category && (
-              <View style={[styles.modernTag, { backgroundColor: colors.cream, borderColor: colors.warmGray + '40' }]}>
+              <View style={[styles.modernTag, { backgroundColor: colors.cream, borderColor: `${colors.warmGray}40` }]}>
                 <Text style={[styles.modernTagText, { color: colors.warmGray }]} numberOfLines={1}>{job.category}</Text>
               </View>
             )}
@@ -2590,7 +2886,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           </View>
           
           {job.salary && (
-            <View style={[styles.salarySection, { backgroundColor: colors.success + '10' }]}>
+            <View style={[styles.salarySection, { backgroundColor: `${colors.success}10` }]}>
               <Icon name="payments" size={16} color={colors.success} />
               <Text style={[styles.salaryText, { color: colors.success }]} numberOfLines={1}>
                 {job.salary}
@@ -2646,6 +2942,22 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           >
             <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
           </TouchableOpacity>
+          {user && userData?.role === 'user' && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyRegistration')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>Be a Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && userData?.role === 'company' && userData?.companyProfile && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyDashboard')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>To Company</Text>
+            </TouchableOpacity>
+          )}
           {user && (
             <TouchableOpacity 
               style={[styles.toolbarNavButton, styles.toolbarBookmarksButton]}
@@ -2657,7 +2969,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           )}
           
           {/* Search Bar */}
-          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.cream }]}>
+          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.lightGray }]}>
             <Icon name="search" size={18} color={colors.warmGray} />
             <TextInput
               style={[styles.toolbarSearchInput, { color: colors.deepNavy }]}
@@ -2671,41 +2983,16 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
             <TouchableOpacity 
-              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
-              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+              ref={languageButtonRef}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.lightGray }]}
+              onPress={toggleLanguageDropdown}
             >
               <Icon name="language" size={20} color={colors.deepNavy} />
               <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
-                {selectedLanguage}
+                {getCurrentLanguage().code.toUpperCase()}
               </Text>
-              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+              <Icon name={showLanguageMenu ? "expand-less" : "expand-more"} size={20} color={colors.deepNavy} />
             </TouchableOpacity>
-            
-            {showLanguageMenu && (
-              <View style={[styles.languageMenu, { backgroundColor: colors.white }]}>
-                {['English', 'Amharic', 'Oromifa'].map((lang) => (
-                  <TouchableOpacity
-                    key={lang}
-                    style={styles.languageMenuItem}
-                    onPress={() => {
-                      setSelectedLanguage(lang);
-                      setShowLanguageMenu(false);
-                    }}
-                  >
-                    <Text style={[
-                      styles.languageMenuItemText,
-                      { color: colors.deepNavy },
-                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
-                    ]}>
-                      {lang}
-                    </Text>
-                    {selectedLanguage === lang && (
-                      <Icon name="check" size={16} color={colors.beeYellow} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
         </View>
         
@@ -2790,7 +3077,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                 style={[styles.toolbarSignupButton, { backgroundColor: colors.beeYellow }]}
                 onPress={() => navigation.navigate('Signup')}
               >
-                <Text style={[styles.toolbarSignupButtonText, { color: colors.deepNavy }]}>
+                <Text style={[styles.toolbarSignupButtonText, { color: colors.buttonTextOnYellow }]}>
                   Sign Up
                 </Text>
               </TouchableOpacity>
@@ -2799,29 +3086,20 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
         </View>
       </View>
 
-      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: colors.cream }]}>
+      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: isDarkMode ? '#1A1D23' : colors.cream }]}>
         {/* Hero Section with Search */}
-        <View style={[styles.jobsHeroSection, { backgroundColor: colors.deepNavy }]}>
+        <View style={[styles.jobsHeroSection, { backgroundColor: isDarkMode ? colors.white : '#92400E' }]}>
           {/* Decorative Background Elements */}
           <View style={styles.heroBackgroundDecor}>
-            <View style={[styles.heroCircle1, { backgroundColor: colors.beeYellow + '15' }]} />
-            <View style={[styles.heroCircle2, { backgroundColor: colors.softBlue + '15' }]} />
+            <View style={[styles.heroCircle1, { backgroundColor: `${colors.beeYellow}15` }]} />
+            <View style={[styles.heroCircle2, { backgroundColor: `${colors.softBlue}15` }]} />
           </View>
           
           <View style={styles.jobsHeroContent}>
-            <View style={styles.heroTextContainer}>
-              <Text style={[styles.jobsHeroTitle, { color: colors.white }]}>
-                Discover Your Next Career Move
-              </Text>
-              <Text style={[styles.jobsHeroSubtitle, { color: colors.cream }]}>
-                {totalJobs.toLocaleString()} opportunities from top companies worldwide
-              </Text>
-            </View>
-            
             {/* Enhanced Search Bar */}
-            <View style={[styles.heroSearchContainer, { backgroundColor: colors.white }]}>
+            <View style={[styles.heroSearchContainer, { backgroundColor: isDarkMode ? '#E5E7EB' : colors.white }]}>
               <View style={styles.searchIconContainer}>
-                <Icon name="search" size={24} color={colors.deepNavy} />
+                <Icon name="search" size={24} color={isDarkMode ? colors.warmGray : colors.deepNavy} />
               </View>
               <TextInput
                 style={[styles.heroSearchInput, { color: colors.deepNavy }]}
@@ -2838,36 +3116,29 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                   <Icon name="close" size={20} color={colors.warmGray} />
                 </TouchableOpacity>
               )}
-              <TouchableOpacity style={[styles.searchButton, { backgroundColor: colors.deepNavy }]}>
-                <Text style={[styles.searchButtonText, { color: colors.white }]}>Search</Text>
+              <TouchableOpacity style={[styles.searchButton, { backgroundColor: isDarkMode ? colors.beeYellow : '#1A1B3E' }]}>
+                <Text style={[styles.searchButtonText, { color: isDarkMode ? colors.buttonTextOnYellow : colors.white }]}>Search</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Quick Stats with Icons */}
-            <View style={styles.statsRow}>
-              <View style={styles.statItem}>
-                <View style={[styles.statIconCircle, { backgroundColor: colors.beeYellow + '20' }]}>
-                  <Icon name="work" size={24} color={colors.beeYellow} />
-                </View>
-                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>{totalJobs}</Text>
-                <Text style={[styles.statLabel, { color: colors.cream }]}>Active Jobs</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <View style={[styles.statIconCircle, { backgroundColor: colors.softBlue + '20' }]}>
-                  <Icon name="category" size={24} color={colors.softBlue} />
-                </View>
-                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>{categories.length}</Text>
-                <Text style={[styles.statLabel, { color: colors.cream }]}>Categories</Text>
-              </View>
-              <View style={styles.statDivider} />
-              <View style={styles.statItem}>
-                <View style={[styles.statIconCircle, { backgroundColor: colors.success + '20' }]}>
-                  <Icon name="business" size={24} color={colors.success} />
-                </View>
-                <Text style={[styles.statNumber, { color: colors.beeYellow }]}>500+</Text>
-                <Text style={[styles.statLabel, { color: colors.cream }]}>Companies</Text>
-              </View>
+            {/* Mobile App CTA Banner */}
+            <View style={styles.mobileAppBanner}>
+              <TouchableOpacity 
+                style={styles.playstoreButton}
+                onPress={() => {
+                  // TODO: Add Play Store link
+                  console.log('Opening Play Store...');
+                }}
+              >
+                <Image 
+                  source={require('./assets/google_play.png')}
+                  style={styles.playstoreButtonImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+              <Text style={[styles.mobileAppDisclaimer, { color: isDarkMode ? colors.warmGray : colors.white }]}>
+                Download the app for personalized job alerts, saved searches, and exclusive mobile features
+              </Text>
             </View>
           </View>
         </View>
@@ -2883,16 +3154,16 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
               <TouchableOpacity
                 style={[
                   styles.categoryPill,
-                  { backgroundColor: colors.cream, borderColor: colors.lightGray },
-                  !selectedCategory && { backgroundColor: colors.deepNavy }
+                  { backgroundColor: colors.lightGray, borderColor: colors.lightGray },
+                  !selectedCategory && { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
                 ]}
                 onPress={() => setSelectedCategory('')}
               >
-                <Icon name="apps" size={16} color={!selectedCategory ? colors.white : colors.deepNavy} />
+                <Icon name="apps" size={16} color={!selectedCategory ? (isDarkMode ? colors.buttonTextOnYellow : colors.white) : colors.deepNavy} />
                 <Text style={[
                   styles.categoryPillText,
                   { color: colors.deepNavy },
-                  !selectedCategory && { color: colors.white, fontWeight: '600' }
+                  !selectedCategory && { color: isDarkMode ? colors.buttonTextOnYellow : colors.white, fontWeight: '600' }
                 ]}>
                   All Jobs
                 </Text>
@@ -2902,15 +3173,15 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                   key={category.id}
                   style={[
                     styles.categoryPill,
-                    { backgroundColor: colors.cream, borderColor: colors.lightGray },
-                    selectedCategory === category.name && { backgroundColor: colors.deepNavy }
+                    { backgroundColor: colors.lightGray, borderColor: colors.lightGray },
+                    selectedCategory === category.name && { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
                   ]}
                   onPress={() => setSelectedCategory(category.name)}
                 >
                   <Text style={[
                     styles.categoryPillText,
                     { color: colors.deepNavy },
-                    selectedCategory === category.name && { color: colors.white, fontWeight: '600' }
+                    selectedCategory === category.name && { color: isDarkMode ? colors.buttonTextOnYellow : colors.white, fontWeight: '600' }
                   ]}>
                     {category.name}
                   </Text>
@@ -2923,48 +3194,48 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
         {/* Main Content Area with Sidebar */}
         <View style={styles.jobsContentWithSidebar}>
           {/* Filter Sidebar */}
-          <View style={[styles.filterSidebar, { backgroundColor: colors.white }]}>
+          <View style={[styles.filterSidebar, { backgroundColor: isDarkMode ? '#0F1114' : colors.white }]}>
             <View style={styles.filterHeader}>
-              <Icon name="tune" size={24} color={colors.deepNavy} />
-              <Text style={[styles.filterTitle, { color: colors.deepNavy }]}>Filters</Text>
+              <Icon name="tune" size={24} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
+              <Text style={[styles.filterTitle, { color: isDarkMode ? colors.beeYellow : colors.deepNavy }]}>Filters</Text>
             </View>
 
             {/* Clear All Filters */}
             {(selectedJobType || selectedRemote) && (
               <TouchableOpacity 
-                style={[styles.clearFiltersButton, { backgroundColor: colors.softBlue + '15' }]}
+                style={[styles.clearFiltersButton, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.softBlue}15` }]}
                 onPress={() => {
                   setSelectedJobType('');
                   setSelectedRemote('');
                 }}
               >
-                <Icon name="clear-all" size={16} color={colors.softBlue} />
-                <Text style={[styles.clearFiltersText, { color: colors.softBlue }]}>Clear all filters</Text>
+                <Icon name="clear-all" size={16} color={isDarkMode ? colors.beeYellow : colors.softBlue} />
+                <Text style={[styles.clearFiltersText, { color: isDarkMode ? colors.beeYellow : colors.softBlue }]}>Clear all filters</Text>
               </TouchableOpacity>
             )}
             
             {/* Employment Type Filter - Enhanced */}
-            <View style={styles.filterGroup}>
+            <View style={[styles.filterGroup, { backgroundColor: isDarkMode ? '#0F1114' : `${colors.cream}80`, borderColor: isDarkMode ? '#2C2F36' : `${colors.lightGray}60` }]}>
               <TouchableOpacity 
                 style={styles.filterGroupHeader}
                 onPress={() => setEmploymentTypeExpanded(!employmentTypeExpanded)}
               >
                 <View style={styles.filterGroupTitleContainer}>
-                  <View style={[styles.filterGroupIconCircle, { backgroundColor: colors.softBlue + '20' }]}>
-                    <Icon name="work" size={18} color={colors.softBlue} />
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.softBlue}20` }]}>
+                    <Icon name="work" size={18} color={isDarkMode ? colors.beeYellow : colors.softBlue} />
                   </View>
-                  <Text style={[styles.filterGroupTitle, { color: colors.deepNavy }]}>Employment Type</Text>
+                  <Text style={[styles.filterGroupTitle, { color: isDarkMode ? '#E2E8F0' : colors.deepNavy }]}>{t.employmentType}</Text>
                 </View>
-                <View style={[styles.expandIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.expandIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : colors.lightGray }]}>
                   <Icon 
                     name={employmentTypeExpanded ? "expand-less" : "expand-more"} 
                     size={20} 
-                    color={colors.deepNavy} 
+                    color={isDarkMode ? colors.beeYellow : colors.deepNavy} 
                   />
                 </View>
               </TouchableOpacity>
               {employmentTypeExpanded && (
-                <View style={styles.filterOptions}>
+                <View style={[styles.filterOptions, { backgroundColor: isDarkMode ? '#0F1114' : 'transparent' }]}>
                   {[
                     { label: 'All Types', value: '', icon: 'work-outline' },
                     { label: 'Full-time', value: 'Full-time', icon: 'work' },
@@ -2977,10 +3248,14 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                       key={option.value}
                       style={[
                         styles.filterOption,
-                        { backgroundColor: colors.white },
+                        { 
+                          backgroundColor: isDarkMode ? '#1A1D23' : colors.white,
+                          borderColor: isDarkMode ? '#2C2F36' : '#E5E7EB',
+                          borderWidth: 1
+                        },
                         selectedJobType === option.value && [
                           styles.filterOptionActive,
-                          { backgroundColor: colors.deepNavy, borderColor: colors.deepNavy }
+                          { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy, borderColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
                         ]
                       ]}
                       onPress={() => setSelectedJobType(option.value)}
@@ -2988,24 +3263,24 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                     >
                       <View style={[
                         styles.filterOptionIconCircle,
-                        { backgroundColor: selectedJobType === option.value ? colors.white + '20' : colors.softBlue + '15' }
+                        { backgroundColor: selectedJobType === option.value ? (isDarkMode ? '#FFFFFF20' : `${colors.white}20`) : (isDarkMode ? '#2C2F36' : `${colors.softBlue}15`) }
                       ]}>
                         <Icon 
                           name={option.icon} 
                           size={16} 
-                          color={selectedJobType === option.value ? colors.white : colors.softBlue} 
+                          color={selectedJobType === option.value ? colors.white : (isDarkMode ? colors.beeYellow : colors.softBlue)} 
                         />
                       </View>
                       <Text style={[
                         styles.filterOptionText,
-                        { color: colors.deepNavy },
+                        { color: isDarkMode ? '#E2E8F0' : colors.deepNavy },
                         selectedJobType === option.value && { color: colors.white, fontFamily: fonts.bold }
                       ]}>
                         {option.label}
                       </Text>
                       {selectedJobType === option.value && (
-                        <View style={[styles.checkmarkCircle, { backgroundColor: colors.beeYellow }]}>
-                          <Icon name="check" size={14} color={colors.deepNavy} />
+                        <View style={[styles.checkmarkCircle, { backgroundColor: isDarkMode ? '#FFFFFF' : colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -3015,27 +3290,27 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
             </View>
 
             {/* Work Model Filter - Enhanced */}
-            <View style={styles.filterGroup}>
+            <View style={[styles.filterGroup, { backgroundColor: isDarkMode ? '#0F1114' : `${colors.cream}80`, borderColor: isDarkMode ? '#2C2F36' : `${colors.lightGray}60` }]}>
               <TouchableOpacity 
                 style={styles.filterGroupHeader}
                 onPress={() => setWorkModeExpanded(!workModeExpanded)}
               >
                 <View style={styles.filterGroupTitleContainer}>
-                  <View style={[styles.filterGroupIconCircle, { backgroundColor: colors.success + '20' }]}>
-                    <Icon name="home-work" size={18} color={colors.success} />
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.success}20` }]}>
+                    <Icon name="home-work" size={18} color={isDarkMode ? colors.beeYellow : colors.success} />
                   </View>
-                  <Text style={[styles.filterGroupTitle, { color: colors.deepNavy }]}>Work Mode</Text>
+                  <Text style={[styles.filterGroupTitle, { color: isDarkMode ? '#E2E8F0' : colors.deepNavy }]}>{t.workMode}</Text>
                 </View>
-                <View style={[styles.expandIconCircle, { backgroundColor: colors.cream }]}>
+                <View style={[styles.expandIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : colors.lightGray }]}>
                   <Icon 
                     name={workModeExpanded ? "expand-less" : "expand-more"} 
                     size={20} 
-                    color={colors.deepNavy} 
+                    color={isDarkMode ? colors.beeYellow : colors.deepNavy} 
                   />
                 </View>
               </TouchableOpacity>
               {workModeExpanded && (
-                <View style={styles.filterOptions}>
+                <View style={[styles.filterOptions, { backgroundColor: isDarkMode ? '#0F1114' : 'transparent' }]}>
                   {[
                     { label: 'All Modes', value: '', icon: 'public' },
                     { label: 'Remote', value: 'Remote', icon: 'home' },
@@ -3045,10 +3320,14 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                       key={mode.value}
                       style={[
                         styles.filterOption,
-                        { backgroundColor: colors.white },
+                        { 
+                          backgroundColor: isDarkMode ? '#1A1D23' : colors.white,
+                          borderColor: isDarkMode ? '#2C2F36' : '#E5E7EB',
+                          borderWidth: 1
+                        },
                         selectedRemote === mode.value && [
                           styles.filterOptionActive,
-                          { backgroundColor: colors.deepNavy, borderColor: colors.deepNavy }
+                          { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy, borderColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
                         ]
                       ]}
                       onPress={() => setSelectedRemote(mode.value)}
@@ -3056,24 +3335,24 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                     >
                       <View style={[
                         styles.filterOptionIconCircle,
-                        { backgroundColor: selectedRemote === mode.value ? colors.white + '20' : colors.success + '15' }
+                        { backgroundColor: selectedRemote === mode.value ? (isDarkMode ? '#FFFFFF20' : `${colors.white}20`) : (isDarkMode ? '#2C2F36' : `${colors.success}15`) }
                       ]}>
                         <Icon 
                           name={mode.icon} 
                           size={16} 
-                          color={selectedRemote === mode.value ? colors.white : colors.success} 
+                          color={selectedRemote === mode.value ? (isDarkMode ? colors.white : colors.white) : (isDarkMode ? colors.beeYellow : colors.success)} 
                         />
                       </View>
                       <Text style={[
                         styles.filterOptionText,
-                        { color: colors.deepNavy },
+                        { color: isDarkMode ? '#e2e8f0' : colors.deepNavy },
                         selectedRemote === mode.value && { color: colors.white, fontFamily: fonts.bold }
                       ]}>
                         {mode.label}
                       </Text>
                       {selectedRemote === mode.value && (
-                        <View style={[styles.checkmarkCircle, { backgroundColor: colors.beeYellow }]}>
-                          <Icon name="check" size={14} color={colors.deepNavy} />
+                        <View style={[styles.checkmarkCircle, { backgroundColor: isDarkMode ? '#FFFFFF' : colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
                         </View>
                       )}
                     </TouchableOpacity>
@@ -3094,7 +3373,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                 {(selectedCategory || selectedJobType || selectedRemote) && (
                   <View style={styles.activeFiltersRow}>
                     {selectedCategory && (
-                      <View style={[styles.activeFilterChip, { backgroundColor: colors.deepNavy + '15' }]}>
+                      <View style={[styles.activeFilterChip, { backgroundColor: `${colors.deepNavy}15` }]}>
                         <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedCategory}</Text>
                         <TouchableOpacity onPress={() => setSelectedCategory('')}>
                           <Icon name="close" size={14} color={colors.deepNavy} />
@@ -3102,7 +3381,7 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                       </View>
                     )}
                     {selectedJobType && (
-                      <View style={[styles.activeFilterChip, { backgroundColor: colors.deepNavy + '15' }]}>
+                      <View style={[styles.activeFilterChip, { backgroundColor: `${colors.deepNavy}15` }]}>
                         <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedJobType}</Text>
                         <TouchableOpacity onPress={() => setSelectedJobType('')}>
                           <Icon name="close" size={14} color={colors.deepNavy} />
@@ -3117,8 +3396,8 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                   <Icon name="sort" size={18} color={colors.warmGray} />
                   <Text style={[styles.sortLabel, { color: colors.warmGray }]}>Sort by:</Text>
                   <TouchableOpacity style={styles.sortButton}>
-                    <Text style={[styles.sortButtonText, { color: colors.deepNavy }]}>Most Recent</Text>
-                    <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+                    <Text style={[styles.sortButtonText, { color: isDarkMode ? '#000000' : colors.deepNavy }]}>Most Recent</Text>
+                    <Icon name="arrow-drop-down" size={20} color={isDarkMode ? '#000000' : colors.deepNavy} />
                   </TouchableOpacity>
                 </View>
                 <View style={styles.viewToggle}>
@@ -3269,30 +3548,1224 @@ function JobsScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
           </View>
         </View>
       </ScrollView>
+      
+      {/* Language dropdown overlay (same as HomeScreen) */}
+      {showLanguageMenu && (
+        <View style={styles.fullScreenDropdownOverlay}>
+          <TouchableOpacity 
+            style={styles.fullScreenTouchArea}
+            onPress={() => setShowLanguageMenu(false)}
+            activeOpacity={1}
+          />
+          <View style={[styles.absoluteLanguageDropdown, { top: dropdownPosition.top, right: dropdownPosition.right }]}>
+            {languageOptions.map((language, index) => (
+              <TouchableOpacity
+                key={language.code}
+                style={[
+                  styles.languageOption,
+                  currentLanguage === language.code && styles.languageOptionActive,
+                  index === languageOptions.length - 1 && { borderBottomWidth: 0 }
+                ]}
+                onPress={() => changeLanguage(language.code)}
+              >
+                <Text style={styles.languageLabel}>{language.label}</Text>
+                {currentLanguage === language.code && (
+                  <Icon name="check" size={16} color={colors.beeYellow} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
-// Companies Screen (Placeholder)
-function CompaniesScreen({ navigation }: any) {
-  const colors = lightColors;
+// Companies Screen - Full Implementation
+function CompaniesScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState('');
+  const [selectedIndustry, setSelectedIndustry] = useState('');
+  const [selectedSize, setSelectedSize] = useState('');
+  const [selectedVerification, setSelectedVerification] = useState('');
+  const [industries, setIndustries] = useState<string[]>([]);
+  const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [selectedLanguage, setSelectedLanguage] = useState('English');
+  const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageButtonRef = useRef<any>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCompanies, setTotalCompanies] = useState(0);
+  const [lastVisible, setLastVisible] = useState<any>(null);
+  const [firstVisible, setFirstVisible] = useState<any>(null);
+  const [pageCache, setPageCache] = useState<Map<number, any>>(new Map());
+  
+  // Collapsible filter states
+  const [industryExpanded, setIndustryExpanded] = useState(true);
+  const [sizeExpanded, setSizeExpanded] = useState(true);
+  const [verificationExpanded, setVerificationExpanded] = useState(true);
+  
+  // View mode state for grid/list toggle
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [currentLanguage, setCurrentLanguage] = useState('en');
+  
+  const companiesPerPage = 12;
+  
+  const colors = isDarkMode ? darkColors : lightColors;
+  const t = translations[currentLanguage as keyof typeof translations];
+  
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'am', label: 'አማርኛ' },
+    { code: 'ti', label: 'ትግርኛ' },
+    { code: 'or', label: 'Afaan Oromoo' }
+  ];
+  
+  const getCurrentLanguage = () => {
+    return languageOptions.find(lang => lang.code === currentLanguage) || languageOptions[0];
+  };
+  
+  const toggleLanguageDropdown = () => {
+    if (!showLanguageMenu && languageButtonRef.current) {
+      languageButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+        setDropdownPosition({
+          top: y + height + 5,
+          right: typeof window !== 'undefined' ? window.innerWidth - x - width : 0,
+        });
+      });
+    }
+    setShowLanguageMenu(!showLanguageMenu);
+  };
+  
+  const changeLanguage = async (langCode: string) => {
+    setCurrentLanguage(langCode);
+    setSelectedLanguage(languageOptions.find(lang => lang.code === langCode)?.label || 'English');
+    setShowLanguageMenu(false);
+    try {
+      await AsyncStorage.setItem('selectedLanguage', langCode);
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+    }
+  };
+
+  useEffect(() => {
+    const initializeScreen = async () => {
+      try {
+        // Load saved language
+        const savedLanguage = await AsyncStorage.getItem('selectedLanguage');
+        if (savedLanguage) {
+          setCurrentLanguage(savedLanguage);
+          setSelectedLanguage(languageOptions.find(lang => lang.code === savedLanguage)?.label || 'English');
+        }
+      } catch (error) {
+        console.error('Error loading language:', error);
+      }
+    };
+
+    initializeScreen();
+    
+    // Set search text if passed from home page
+    if (route?.params?.searchQuery) {
+      setSearchText(route.params.searchQuery);
+    }
+
+    // Listen to auth state
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        try {
+          const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUserData(data);
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      } else {
+        setUser(null);
+        setUserData(null);
+      }
+    });
+
+    return unsubscribe;
+  }, [route?.params?.searchQuery]);
+
+  // Fetch data when user is authenticated
+  useEffect(() => {
+    if (user) {
+      console.log('✅ User authenticated, fetching companies data...');
+      const loadData = async () => {
+        try {
+          await fetchTotalCount();
+          await fetchCompanies(1);
+          await fetchIndustries();
+        } catch (error) {
+          console.error('Error loading companies data:', error);
+        }
+      };
+      loadData();
+    } else {
+      // Reset loading state if user logs out
+      setLoading(false);
+    }
+  }, [user]);
+
+  // Refetch when filters change (only if user is authenticated)
+  useEffect(() => {
+    if (!user || loading) return;
+    
+    const refetchWithFilters = async () => {
+      try {
+        setCurrentPage(1);
+        setPageCache(new Map());
+        await fetchTotalCount();
+        await fetchCompanies(1);
+      } catch (error) {
+        console.error('Error refetching with filters:', error);
+      }
+    };
+
+    refetchWithFilters();
+  }, [searchText, selectedIndustry, selectedSize, selectedVerification]);
+
+  const fetchTotalCount = async () => {
+    try {
+      console.log('🔍 Fetching total company count...');
+      const usersCollection = collection(db, 'users');
+      // Fetch all companies, filter by verification status in memory
+      const countQuery = dbQuery(
+        usersCollection, 
+        where('role', '==', 'company')
+      );
+
+      const snapshot = await getDocs(countQuery);
+      console.log('✅ Total companies in DB:', snapshot.size);
+      
+      // Apply all filters in memory
+      let filteredDocs = snapshot.docs;
+      
+      // Filter by verification status (default to approved if no filter selected)
+      const verificationFilter = selectedVerification || 'approved';
+      filteredDocs = filteredDocs.filter(doc => {
+        const data = doc.data();
+        return data.companyProfile?.verificationStatus === verificationFilter;
+      });
+      console.log(`✅ Companies with status '${verificationFilter}':`, filteredDocs.length);
+      
+      // Filter by industry
+      if (selectedIndustry) {
+        filteredDocs = filteredDocs.filter(doc => {
+          const data = doc.data();
+          return data.companyProfile?.industry === selectedIndustry;
+        });
+      }
+      
+      // Filter by size
+      if (selectedSize) {
+        filteredDocs = filteredDocs.filter(doc => {
+          const data = doc.data();
+          return data.companyProfile?.companySize === selectedSize;
+        });
+      }
+      
+      // Apply search filter
+      if (searchText) {
+        filteredDocs = filteredDocs.filter(doc => {
+          const data = doc.data();
+          const companyProfile = data.companyProfile || {};
+          return (
+            companyProfile.companyName?.toLowerCase().includes(searchText.toLowerCase()) ||
+            companyProfile.industry?.toLowerCase().includes(searchText.toLowerCase()) ||
+            companyProfile.city?.toLowerCase().includes(searchText.toLowerCase())
+          );
+        });
+      }
+      
+      console.log('✅ Filtered companies count:', filteredDocs.length);
+      setTotalCompanies(filteredDocs.length);
+    } catch (error: any) {
+      console.error('❌ Error fetching total count:', error);
+      if (error?.code === 'permission-denied') {
+        console.error('🚫 Firestore permissions denied. Please update security rules to allow reading company profiles.');
+        Alert.alert(
+          'Permission Error',
+          'Unable to load companies. Please check Firestore security rules.',
+          [{ text: 'OK' }]
+        );
+      }
+      setTotalCompanies(0);
+    }
+  };
+
+  const fetchCompanies = async (page: number, direction: 'next' | 'prev' | 'direct' = 'direct') => {
+    try {
+      setLoading(true);
+      console.log('📋 Fetching companies - Page:', page, 'Direction:', direction);
+
+      // Check cache first
+      if (pageCache.has(page)) {
+        const cachedData = pageCache.get(page);
+        setCompanies(cachedData.companies);
+        setFirstVisible(cachedData.firstVisible);
+        setLastVisible(cachedData.lastVisible);
+        setCurrentPage(page);
+        setLoading(false);
+        console.log('✅ Loaded from cache:', cachedData.companies.length, 'companies');
+        return;
+      }
+
+      const usersCollection = collection(db, 'users');
+      
+      // Fetch all companies, filter by verification status in memory
+      const queryConstraints: any[] = [
+        where('role', '==', 'company'),
+        orderBy('createdAt', 'desc')
+      ];
+
+      const companiesQuery = dbQuery(usersCollection, ...queryConstraints);
+      const companiesSnapshot = await getDocs(companiesQuery);
+      
+      console.log('📊 Total companies from DB:', companiesSnapshot.size);
+      
+      let companiesData = companiesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        email: doc.data().email,
+        role: doc.data().role,
+        createdAt: doc.data().createdAt,
+        companyProfile: doc.data().companyProfile
+      }));
+
+      // Apply all filters in memory
+      let filteredCompanies = companiesData;
+      
+      // Filter by verification status (default to approved if no filter selected)
+      const verificationFilter = selectedVerification || 'approved';
+      filteredCompanies = filteredCompanies.filter((company: any) => {
+        return company.companyProfile?.verificationStatus === verificationFilter;
+      });
+      console.log(`📊 After verification filter (${verificationFilter}):`, filteredCompanies.length);
+      
+      // Filter by industry
+      if (selectedIndustry) {
+        filteredCompanies = filteredCompanies.filter((company: any) => {
+          return company.companyProfile?.industry === selectedIndustry;
+        });
+        console.log('📊 After industry filter:', filteredCompanies.length);
+      }
+      
+      // Filter by size
+      if (selectedSize) {
+        filteredCompanies = filteredCompanies.filter((company: any) => {
+          return company.companyProfile?.companySize === selectedSize;
+        });
+        console.log('📊 After size filter:', filteredCompanies.length);
+      }
+
+      // Apply search filter
+      if (searchText) {
+        filteredCompanies = filteredCompanies.filter((company: any) => {
+          const companyProfile = company.companyProfile || {};
+          return (
+            companyProfile.companyName?.toLowerCase().includes(searchText.toLowerCase()) ||
+            companyProfile.industry?.toLowerCase().includes(searchText.toLowerCase()) ||
+            companyProfile.city?.toLowerCase().includes(searchText.toLowerCase())
+          );
+        });
+        console.log('📊 After search filter:', filteredCompanies.length);
+      }
+
+      console.log('📊 Total filtered companies:', filteredCompanies.length);
+
+      // Apply pagination
+      const startIndex = (page - 1) * companiesPerPage;
+      const endIndex = startIndex + companiesPerPage;
+      const paginatedCompanies = filteredCompanies.slice(startIndex, endIndex);
+
+      console.log('📊 Paginated companies for page', page, ':', paginatedCompanies.length);
+
+      // Cache this page
+      const newCache = new Map(pageCache);
+      newCache.set(page, {
+        companies: paginatedCompanies,
+        firstVisible: null,
+        lastVisible: null
+      });
+      setPageCache(newCache);
+
+      setCompanies(paginatedCompanies);
+      setCurrentPage(page);
+    } catch (error: any) {
+      console.error('❌ Error fetching companies:', error);
+      if (error?.code === 'permission-denied') {
+        console.error('🚫 Firestore permissions denied. Please update security rules.');
+        Alert.alert(
+          'Permission Error',
+          'Unable to load companies due to insufficient permissions. Please update Firestore security rules to allow reading company profiles.',
+          [{ text: 'OK' }]
+        );
+      }
+      setCompanies([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchIndustries = async () => {
+    try {
+      console.log('🏭 Fetching industries...');
+      const usersCollection = collection(db, 'users');
+      // Simple query - just get companies
+      const companiesQuery = dbQuery(
+        usersCollection, 
+        where('role', '==', 'company')
+      );
+      const companiesSnapshot = await getDocs(companiesQuery);
+      
+      const industriesSet = new Set<string>();
+      companiesSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        // Include industries from all companies (approved, pending, rejected)
+        if (data.companyProfile?.industry) {
+          industriesSet.add(data.companyProfile.industry);
+        }
+      });
+      
+      const industriesList = Array.from(industriesSet).sort();
+      console.log('✅ Industries found:', industriesList.length);
+      setIndustries(industriesList);
+    } catch (error: any) {
+      console.error('❌ Error fetching industries:', error);
+      if (error?.code === 'permission-denied') {
+        console.error('🚫 Firestore permissions denied for industries query.');
+        Alert.alert(
+          'Permission Error',
+          'Unable to load industries. Please check if you are logged in.',
+          [{ text: 'OK' }]
+        );
+      }
+      setIndustries([]);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      navigation.replace('Home');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
+  // Pagination calculations
+  const totalPages = Math.ceil(totalCompanies / companiesPerPage);
+  const startIndex = (currentPage - 1) * companiesPerPage;
+  const endIndex = Math.min(startIndex + companiesPerPage, totalCompanies);
+
+  const handlePageChange = (page: number) => {
+    if (page === currentPage + 1) {
+      fetchCompanies(page, 'next');
+    } else if (page === currentPage - 1) {
+      fetchCompanies(page, 'prev');
+    } else {
+      fetchCompanies(page, 'direct');
+    }
+  };
+
+  const renderCompanyCard = ({ item: company }: any) => {
+    const companyProfile = company.companyProfile || {};
+    const isFeatured = companyProfile.verificationStatus === 'approved';
+    
+    return (
+      <TouchableOpacity 
+        style={[
+          styles.modernJobCard, 
+          { backgroundColor: colors.white },
+          viewMode === 'list' && styles.modernJobCardList,
+          isFeatured && styles.featuredJobCard
+        ]} 
+        activeOpacity={0.7}
+        onPress={() => navigation.navigate('CompanyDetails', { companyId: company.id, company })}
+      >
+        {/* Verified Badge */}
+        {isFeatured && (
+          <View style={[styles.featuredBadge, { backgroundColor: colors.success }]}>
+            <Icon name="verified" size={14} color={colors.white} />
+            <Text style={[styles.featuredBadgeText, { color: colors.white }]}>Verified</Text>
+          </View>
+        )}
+
+        {/* Card Header with Company Logo */}
+        <View style={styles.modernCardHeader}>
+          {companyProfile.logoUrl ? (
+            <Image
+              source={{ uri: companyProfile.logoUrl }}
+              style={[styles.companyLogo, { backgroundColor: colors.cream }]}
+              resizeMode="cover"
+            />
+          ) : (
+            <View style={[styles.companyLogo, { backgroundColor: colors.deepNavy }]}>
+              <Text style={[styles.companyLogoText, { color: colors.white }]}>
+                {companyProfile.companyName?.charAt(0)?.toUpperCase() || 'C'}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Company Info */}
+        <View style={styles.modernCardBody}>
+          <Text style={[styles.modernJobTitle, { color: colors.deepNavy }]} numberOfLines={2}>
+            {companyProfile.companyName || 'Company Name'}
+          </Text>
+          <Text style={[styles.modernCompanyName, { color: colors.warmGray }]} numberOfLines={1}>
+            {companyProfile.industry || 'Industry'}
+          </Text>
+
+          {/* Tags Row */}
+          <View style={styles.tagsRow}>
+            {companyProfile.companySize && (
+              <View style={[styles.modernTag, { backgroundColor: `${colors.softBlue}20`, borderColor: colors.softBlue }]}>
+                <Icon name="people" size={12} color={colors.softBlue} />
+                <Text style={[styles.modernTagText, { color: colors.softBlue }]}>{companyProfile.companySize}</Text>
+              </View>
+            )}
+            {companyProfile.verificationStatus && (
+              <View style={[
+                styles.modernTag, 
+                { 
+                  backgroundColor: companyProfile.verificationStatus === 'approved' 
+                    ? `${colors.success}20` 
+                    : companyProfile.verificationStatus === 'rejected'
+                    ? `${colors.danger}20`
+                    : `${colors.beeYellow}20`,
+                  borderColor: companyProfile.verificationStatus === 'approved' 
+                    ? colors.success 
+                    : companyProfile.verificationStatus === 'rejected'
+                    ? colors.danger
+                    : colors.beeYellow
+                }
+              ]}>
+                <Text style={[
+                  styles.modernTagText, 
+                  { 
+                    color: companyProfile.verificationStatus === 'approved' 
+                      ? colors.success 
+                      : companyProfile.verificationStatus === 'rejected'
+                      ? colors.danger
+                      : colors.beeYellow
+                  }
+                ]}>
+                  {companyProfile.verificationStatus === 'approved' ? 'Verified' : companyProfile.verificationStatus === 'rejected' ? 'Rejected' : 'Pending'}
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Location */}
+          <View style={styles.modernMetaRow}>
+            <View style={styles.modernMetaItem}>
+              <Icon name="location-on" size={16} color={colors.warmGray} />
+              <Text style={[styles.modernMetaText, { color: colors.warmGray }]} numberOfLines={1}>
+                {companyProfile.city || 'Location'}, {companyProfile.country || 'Ethiopia'}
+              </Text>
+            </View>
+          </View>
+          
+          {/* Description */}
+          {companyProfile.companyDescription && (
+            <View style={[styles.salarySection, { backgroundColor: colors.cream }]}>
+              <Text style={[styles.modernMetaText, { color: colors.warmGray }]} numberOfLines={2}>
+                {companyProfile.companyDescription}
+              </Text>
+            </View>
+          )}
+        </View>
+
+        {/* Card Footer */}
+        <View style={[styles.modernCardFooter, { borderTopColor: colors.lightGray }]}>
+          <View style={styles.jobDateContainer}>
+            <Icon name="access-time" size={14} color={colors.warmGray} />
+            <Text style={[styles.modernJobDate, { color: colors.warmGray }]}>
+              {company.createdAt ? new Date(company.createdAt.seconds * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'Recent'}
+            </Text>
+          </View>
+          <TouchableOpacity 
+            style={[styles.modernApplyButton, { backgroundColor: colors.deepNavy }]}
+            onPress={(e) => {
+              e.stopPropagation();
+              navigation.navigate('CompanyDetails', { companyId: company.id, company });
+            }}
+          >
+            <Text style={[styles.modernApplyText, { color: colors.white }]}>View Profile</Text>
+            <Icon name="arrow-forward" size={16} color={colors.white} />
+          </TouchableOpacity>
+        </View>
+      </TouchableOpacity>
+    );
+  };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.settingsHeader}>
-        <TouchableOpacity 
-          style={styles.settingsBackButton}
-          onPress={() => navigation.goBack()}
-        >
-          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
-        </TouchableOpacity>
-        <Text style={styles.settingsTitle}>Companies</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      {/* Header Toolbar */}
+      <View style={[styles.jobsToolbar, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <View style={styles.jobsToolbarLeft}>
+          <TouchableOpacity onPress={() => navigation.navigate('Home')}>
+            <Image 
+              source={require('./assets/favicon.png')}
+              style={styles.toolbarLogo}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Jobs</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.toolbarNavButton}
+            onPress={() => navigation.navigate('Companies')}
+          >
+            <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
+          </TouchableOpacity>
+          {user && userData?.role === 'user' && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyRegistration')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>Be a Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && userData?.role === 'company' && userData?.companyProfile && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyDashboard')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>To Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, styles.toolbarBookmarksButton]}
+              onPress={() => navigation.navigate('Bookmarks')}
+            >
+              <Icon name="bookmark" size={18} color={colors.beeYellow} />
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, marginLeft: 4 }]}>Bookmarks</Text>
+            </TouchableOpacity>
+          )}
+          
+          {/* Search Bar */}
+          <View style={[styles.toolbarSearchContainer, { backgroundColor: colors.lightGray }]}>
+            <Icon name="search" size={18} color={colors.warmGray} />
+            <TextInput
+              style={[styles.toolbarSearchInput, { color: colors.deepNavy }]}
+              placeholder="Search companies..."
+              placeholderTextColor={colors.warmGray}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+          
+          {/* Language Selector */}
+          <View style={styles.toolbarLanguageContainer}>
+            <TouchableOpacity 
+              ref={languageButtonRef}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.lightGray }]}
+              onPress={toggleLanguageDropdown}
+            >
+              <Icon name="language" size={20} color={colors.deepNavy} />
+              <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
+                {getCurrentLanguage().code.toUpperCase()}
+              </Text>
+              <Icon name={showLanguageMenu ? "expand-less" : "expand-more"} size={20} color={colors.deepNavy} />
+            </TouchableOpacity>
+          </View>
+        </View>
+        
+        <View style={styles.jobsToolbarRight}>
+          {/* Theme Toggle Switch */}
+          <TouchableOpacity 
+            style={styles.toolbarThemeToggle}
+            onPress={toggleTheme}
+          >
+            <View style={[
+              styles.themeToggleTrack,
+              { backgroundColor: isDarkMode ? colors.deepNavy : colors.lightGray }
+            ]}>
+              <Icon 
+                name="wb-sunny" 
+                size={14} 
+                color={isDarkMode ? colors.warmGray : colors.beeYellow}
+                style={styles.themeToggleIconLeft}
+              />
+              <View style={[
+                styles.themeToggleKnob,
+                { backgroundColor: colors.white },
+                isDarkMode && styles.themeToggleKnobActive
+              ]}>
+                <Icon 
+                  name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} 
+                  size={12} 
+                  color={isDarkMode ? colors.deepNavy : colors.beeYellow}
+                />
+              </View>
+              <Icon 
+                name="nightlight-round" 
+                size={14} 
+                color={isDarkMode ? colors.beeYellow : colors.warmGray}
+                style={styles.themeToggleIconRight}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {user ? (
+            <>
+              {userData?.profilePicture ? (
+                <Image 
+                  source={{ uri: userData.profilePicture }}
+                  style={styles.toolbarProfilePicture}
+                />
+              ) : (
+                <View style={[styles.toolbarProfilePlaceholder, { backgroundColor: colors.beeYellow }]}>
+                  <Icon name="person" size={20} color={colors.deepNavy} />
+                </View>
+              )}
+              <Text style={[styles.toolbarUserName, { color: colors.deepNavy }]}>
+                {user.email?.split('@')[0]}
+              </Text>
+              <TouchableOpacity 
+                style={styles.toolbarSettingsButton}
+                onPress={() => navigation.navigate('Settings')}
+              >
+                <Icon name="settings" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.toolbarLogoutButton}
+                onPress={() => {
+                  signOut(auth);
+                  navigation.replace('Home');
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.danger} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <TouchableOpacity 
+                style={[styles.toolbarLoginButton, { borderColor: colors.deepNavy }]}
+                onPress={() => navigation.navigate('Login')}
+              >
+                <Text style={[styles.toolbarLoginButtonText, { color: colors.deepNavy }]}>
+                  Login
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity 
+                style={[styles.toolbarSignupButton, { backgroundColor: colors.beeYellow }]}
+                onPress={() => navigation.navigate('Signup')}
+              >
+                <Text style={[styles.toolbarSignupButtonText, { color: colors.buttonTextOnYellow }]}>
+                  Sign Up
+                </Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
       </View>
-      <View style={styles.emptyStateContainer}>
-        <Icon name="business" size={64} color={colors.warmGray} />
-        <Text style={styles.emptyStateText}>Companies Coming Soon</Text>
-        <Text style={styles.emptyStateSubtext}>Browse companies and their job listings</Text>
-      </View>
+
+      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: isDarkMode ? '#1A1D23' : colors.cream }]}>
+        {/* Hero Section with Search */}
+        <View style={[styles.jobsHeroSection, { backgroundColor: isDarkMode ? colors.white : '#92400E' }]}>
+          {/* Decorative Background Elements */}
+          <View style={styles.heroBackgroundDecor}>
+            <View style={[styles.heroCircle1, { backgroundColor: `${colors.beeYellow}15` }]} />
+            <View style={[styles.heroCircle2, { backgroundColor: `${colors.softBlue}15` }]} />
+          </View>
+          
+          <View style={styles.jobsHeroContent}>
+            {/* Enhanced Search Bar */}
+            <View style={[styles.heroSearchContainer, { backgroundColor: isDarkMode ? '#E5E7EB' : colors.white }]}>
+              <View style={styles.searchIconContainer}>
+                <Icon name="search" size={24} color={isDarkMode ? colors.warmGray : colors.deepNavy} />
+              </View>
+              <TextInput
+                style={[styles.heroSearchInput, { color: colors.deepNavy }]}
+                placeholder="Company name, industry, or location..."
+                placeholderTextColor={colors.warmGray}
+                value={searchText}
+                onChangeText={setSearchText}
+              />
+              {searchText.length > 0 && (
+                <TouchableOpacity 
+                  onPress={() => setSearchText('')}
+                  style={styles.searchClearButton}
+                >
+                  <Icon name="close" size={20} color={colors.warmGray} />
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={[styles.searchButton, { backgroundColor: isDarkMode ? colors.beeYellow : '#1A1B3E' }]}>
+                <Text style={[styles.searchButtonText, { color: isDarkMode ? colors.buttonTextOnYellow : colors.white }]}>Search</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Mobile App CTA Banner */}
+            <View style={styles.mobileAppBanner}>
+              <TouchableOpacity 
+                style={styles.playstoreButton}
+                onPress={() => {
+                  console.log('Opening Play Store...');
+                }}
+              >
+                <Image 
+                  source={require('./assets/google_play.png')}
+                  style={styles.playstoreButtonImage}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+              <Text style={[styles.mobileAppDisclaimer, { color: isDarkMode ? colors.warmGray : colors.white }]}>
+                Download the app to connect with top companies and discover career opportunities
+              </Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Industry Pills */}
+        {industries.length > 0 && (
+          <View style={[styles.categoriesSection, { backgroundColor: colors.white }]}>
+            <ScrollView 
+              horizontal 
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.categoriesScrollContent}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.categoryPill,
+                  { backgroundColor: colors.lightGray, borderColor: colors.lightGray },
+                  !selectedIndustry && { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
+                ]}
+                onPress={() => setSelectedIndustry('')}
+              >
+                <Icon name="apps" size={16} color={!selectedIndustry ? (isDarkMode ? colors.buttonTextOnYellow : colors.white) : colors.deepNavy} />
+                <Text style={[
+                  styles.categoryPillText,
+                  { color: colors.deepNavy },
+                  !selectedIndustry && { color: isDarkMode ? colors.buttonTextOnYellow : colors.white, fontWeight: '600' }
+                ]}>
+                  All Companies
+                </Text>
+              </TouchableOpacity>
+              {industries.map((industry) => (
+                <TouchableOpacity
+                  key={industry}
+                  style={[
+                    styles.categoryPill,
+                    { backgroundColor: colors.lightGray, borderColor: colors.lightGray },
+                    selectedIndustry === industry && { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
+                  ]}
+                  onPress={() => setSelectedIndustry(industry)}
+                >
+                  <Text style={[
+                    styles.categoryPillText,
+                    { color: colors.deepNavy },
+                    selectedIndustry === industry && { color: isDarkMode ? colors.buttonTextOnYellow : colors.white, fontWeight: '600' }
+                  ]}>
+                    {industry}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* Main Content Area with Sidebar */}
+        <View style={styles.jobsContentWithSidebar}>
+          {/* Filter Sidebar */}
+          <View style={[styles.filterSidebar, { backgroundColor: isDarkMode ? '#0F1114' : colors.white }]}>
+            <View style={styles.filterHeader}>
+              <Icon name="tune" size={24} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
+              <Text style={[styles.filterTitle, { color: isDarkMode ? colors.beeYellow : colors.deepNavy }]}>Filters</Text>
+            </View>
+
+            {/* Clear All Filters */}
+            {(selectedSize || selectedVerification) && (
+              <TouchableOpacity 
+                style={[styles.clearFiltersButton, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.softBlue}15` }]}
+                onPress={() => {
+                  setSelectedSize('');
+                  setSelectedVerification('');
+                }}
+              >
+                <Icon name="clear-all" size={16} color={isDarkMode ? colors.beeYellow : colors.softBlue} />
+                <Text style={[styles.clearFiltersText, { color: isDarkMode ? colors.beeYellow : colors.softBlue }]}>Clear all filters</Text>
+              </TouchableOpacity>
+            )}
+            
+            {/* Company Size Filter */}
+            <View style={[styles.filterGroup, { backgroundColor: isDarkMode ? '#0F1114' : `${colors.cream}80`, borderColor: isDarkMode ? '#2C2F36' : `${colors.lightGray}60` }]}>
+              <TouchableOpacity 
+                style={styles.filterGroupHeader}
+                onPress={() => setSizeExpanded(!sizeExpanded)}
+              >
+                <View style={styles.filterGroupTitleContainer}>
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.softBlue}20` }]}>
+                    <Icon name="people" size={18} color={isDarkMode ? colors.beeYellow : colors.softBlue} />
+                  </View>
+                  <Text style={[styles.filterGroupTitle, { color: isDarkMode ? '#E2E8F0' : colors.deepNavy }]}>Company Size</Text>
+                </View>
+                <View style={[styles.expandIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : colors.lightGray }]}>
+                  <Icon 
+                    name={sizeExpanded ? "expand-less" : "expand-more"} 
+                    size={20} 
+                    color={isDarkMode ? colors.beeYellow : colors.deepNavy} 
+                  />
+                </View>
+              </TouchableOpacity>
+              {sizeExpanded && (
+                <View style={[styles.filterOptions, { backgroundColor: isDarkMode ? '#0F1114' : 'transparent' }]}>
+                  {[
+                    { label: 'All Sizes', value: '', icon: 'business' },
+                    { label: '1-10 employees', value: '1-10 employees', icon: 'group' },
+                    { label: '11-50 employees', value: '11-50 employees', icon: 'groups' },
+                    { label: '51-200 employees', value: '51-200 employees', icon: 'groups-2' },
+                    { label: '201-500 employees', value: '201-500 employees', icon: 'groups-3' },
+                    { label: '501-1000 employees', value: '501-1000 employees', icon: 'corporate-fare' },
+                    { label: '1000+ employees', value: '1000+ employees', icon: 'apartment' }
+                  ].map((option) => (
+                    <TouchableOpacity
+                      key={option.value}
+                      style={[
+                        styles.filterOption,
+                        { 
+                          backgroundColor: isDarkMode ? '#1A1D23' : colors.white,
+                          borderColor: isDarkMode ? '#2C2F36' : '#E5E7EB',
+                          borderWidth: 1
+                        },
+                        selectedSize === option.value && [
+                          styles.filterOptionActive,
+                          { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy, borderColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
+                        ]
+                      ]}
+                      onPress={() => setSelectedSize(option.value)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.filterOptionIconCircle,
+                        { backgroundColor: selectedSize === option.value ? (isDarkMode ? '#FFFFFF20' : `${colors.white}20`) : (isDarkMode ? '#2C2F36' : `${colors.softBlue}15`) }
+                      ]}>
+                        <Icon 
+                          name={option.icon} 
+                          size={16} 
+                          color={selectedSize === option.value ? colors.white : (isDarkMode ? colors.beeYellow : colors.softBlue)} 
+                        />
+                      </View>
+                      <Text style={[
+                        styles.filterOptionText,
+                        { color: isDarkMode ? '#E2E8F0' : colors.deepNavy },
+                        selectedSize === option.value && { color: colors.white, fontFamily: fonts.bold }
+                      ]}>
+                        {option.label}
+                      </Text>
+                      {selectedSize === option.value && (
+                        <View style={[styles.checkmarkCircle, { backgroundColor: isDarkMode ? '#FFFFFF' : colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Verification Status Filter */}
+            <View style={[styles.filterGroup, { backgroundColor: isDarkMode ? '#0F1114' : `${colors.cream}80`, borderColor: isDarkMode ? '#2C2F36' : `${colors.lightGray}60` }]}>
+              <TouchableOpacity 
+                style={styles.filterGroupHeader}
+                onPress={() => setVerificationExpanded(!verificationExpanded)}
+              >
+                <View style={styles.filterGroupTitleContainer}>
+                  <View style={[styles.filterGroupIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : `${colors.success}20` }]}>
+                    <Icon name="verified" size={18} color={isDarkMode ? colors.beeYellow : colors.success} />
+                  </View>
+                  <Text style={[styles.filterGroupTitle, { color: isDarkMode ? '#E2E8F0' : colors.deepNavy }]}>Verification Status</Text>
+                </View>
+                <View style={[styles.expandIconCircle, { backgroundColor: isDarkMode ? '#1A1D23' : colors.lightGray }]}>
+                  <Icon 
+                    name={verificationExpanded ? "expand-less" : "expand-more"} 
+                    size={20} 
+                    color={isDarkMode ? colors.beeYellow : colors.deepNavy} 
+                  />
+                </View>
+              </TouchableOpacity>
+              {verificationExpanded && (
+                <View style={[styles.filterOptions, { backgroundColor: isDarkMode ? '#0F1114' : 'transparent' }]}>
+                  {[
+                    { label: 'All Status', value: '', icon: 'business' },
+                    { label: 'Verified', value: 'approved', icon: 'verified' },
+                    { label: 'Pending', value: 'pending', icon: 'pending' },
+                    { label: 'Rejected', value: 'rejected', icon: 'cancel' }
+                  ].map((status) => (
+                    <TouchableOpacity
+                      key={status.value}
+                      style={[
+                        styles.filterOption,
+                        { 
+                          backgroundColor: isDarkMode ? '#1A1D23' : colors.white,
+                          borderColor: isDarkMode ? '#2C2F36' : '#E5E7EB',
+                          borderWidth: 1
+                        },
+                        selectedVerification === status.value && [
+                          styles.filterOptionActive,
+                          { backgroundColor: isDarkMode ? colors.beeYellow : colors.deepNavy, borderColor: isDarkMode ? colors.beeYellow : colors.deepNavy }
+                        ]
+                      ]}
+                      onPress={() => setSelectedVerification(status.value)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[
+                        styles.filterOptionIconCircle,
+                        { backgroundColor: selectedVerification === status.value ? (isDarkMode ? '#FFFFFF20' : `${colors.white}20`) : (isDarkMode ? '#2C2F36' : `${colors.success}15`) }
+                      ]}>
+                        <Icon 
+                          name={status.icon} 
+                          size={16} 
+                          color={selectedVerification === status.value ? colors.white : (isDarkMode ? colors.beeYellow : colors.success)} 
+                        />
+                      </View>
+                      <Text style={[
+                        styles.filterOptionText,
+                        { color: isDarkMode ? '#e2e8f0' : colors.deepNavy },
+                        selectedVerification === status.value && { color: colors.white, fontFamily: fonts.bold }
+                      ]}>
+                        {status.label}
+                      </Text>
+                      {selectedVerification === status.value && (
+                        <View style={[styles.checkmarkCircle, { backgroundColor: isDarkMode ? '#FFFFFF' : colors.beeYellow }]}>
+                          <Icon name="check" size={14} color={isDarkMode ? colors.beeYellow : colors.deepNavy} />
+                        </View>
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
+
+          {/* Companies Grid */}
+          <View style={styles.jobsGridSection}>
+            {/* Results Header with Sorting */}
+            <View style={styles.resultsHeader}>
+              <View style={styles.resultsLeftSection}>
+                <Text style={[styles.resultsCount, { color: colors.deepNavy }]}>
+                  {loading ? 'Loading...' : `${totalCompanies} ${totalCompanies === 1 ? 'company' : 'companies'} found`}
+                </Text>
+                {(selectedIndustry || selectedSize || selectedVerification) && (
+                  <View style={styles.activeFiltersRow}>
+                    {selectedIndustry && (
+                      <View style={[styles.activeFilterChip, { backgroundColor: `${colors.deepNavy}15` }]}>
+                        <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedIndustry}</Text>
+                        <TouchableOpacity onPress={() => setSelectedIndustry('')}>
+                          <Icon name="close" size={14} color={colors.deepNavy} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                    {selectedSize && (
+                      <View style={[styles.activeFilterChip, { backgroundColor: `${colors.deepNavy}15` }]}>
+                        <Text style={[styles.activeFilterText, { color: colors.deepNavy }]}>{selectedSize}</Text>
+                        <TouchableOpacity onPress={() => setSelectedSize('')}>
+                          <Icon name="close" size={14} color={colors.deepNavy} />
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+              <View style={styles.resultsRightSection}>
+                <View style={styles.sortContainer}>
+                  <Icon name="sort" size={18} color={colors.warmGray} />
+                  <Text style={[styles.sortLabel, { color: colors.warmGray }]}>Sort by:</Text>
+                  <TouchableOpacity style={styles.sortButton}>
+                    <Text style={[styles.sortButtonText, { color: isDarkMode ? '#000000' : colors.deepNavy }]}>Most Recent</Text>
+                    <Icon name="arrow-drop-down" size={20} color={isDarkMode ? '#000000' : colors.deepNavy} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.viewToggle}>
+                  <TouchableOpacity 
+                    style={[
+                      styles.viewToggleButton, 
+                      { backgroundColor: viewMode === 'grid' ? colors.deepNavy : colors.cream }
+                    ]}
+                    onPress={() => setViewMode('grid')}
+                  >
+                    <Icon name="grid-view" size={18} color={viewMode === 'grid' ? colors.white : colors.deepNavy} />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[
+                      styles.viewToggleButton, 
+                      { backgroundColor: viewMode === 'list' ? colors.deepNavy : colors.cream }
+                    ]}
+                    onPress={() => setViewMode('list')}
+                  >
+                    <Icon name="view-list" size={18} color={viewMode === 'list' ? colors.white : colors.deepNavy} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+
+            {loading ? (
+              <View style={styles.modernLoadingContainer}>
+                <ActivityIndicator size="large" color={colors.deepNavy} />
+                <Text style={[styles.modernLoadingText, { color: colors.deepNavy }]}>
+                  Finding the best companies for you...
+                </Text>
+              </View>
+            ) : companies.length === 0 ? (
+              <View style={styles.modernEmptyState}>
+                <View style={[styles.emptyStateIcon, { backgroundColor: colors.cream }]}>
+                  <Icon name="business-center" size={48} color={colors.warmGray} />
+                </View>
+                <Text style={[styles.emptyStateTitle, { color: colors.deepNavy }]}>No companies found</Text>
+                <Text style={[styles.emptyStateDescription, { color: colors.warmGray }]}>
+                  Try adjusting your filters or search terms to find more companies
+                </Text>
+                <TouchableOpacity 
+                  style={[styles.emptyStateButton, { backgroundColor: colors.deepNavy }]}
+                  onPress={() => {
+                    setSearchText('');
+                    setSelectedIndustry('');
+                    setSelectedSize('');
+                    setSelectedVerification('');
+                  }}
+                >
+                  <Text style={[styles.emptyStateButtonText, { color: colors.white }]}>Clear all filters</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View>
+                <FlatList
+                  data={companies}
+                  renderItem={renderCompanyCard}
+                  keyExtractor={(item) => item.id}
+                  numColumns={viewMode === 'grid' ? 2 : 1}
+                  key={viewMode}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.modernJobsGrid}
+                  scrollEnabled={false}
+                  columnWrapperStyle={viewMode === 'grid' ? styles.modernJobsRow : undefined}
+                />
+
+                {/* Modern Pagination */}
+                {totalPages > 1 && (
+                  <View style={[styles.modernPagination, { backgroundColor: colors.white }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.modernPaginationButton,
+                        { borderColor: colors.lightGray },
+                        currentPage === 1 && styles.modernPaginationButtonDisabled
+                      ]}
+                      onPress={() => handlePageChange(currentPage - 1)}
+                      disabled={currentPage === 1}
+                    >
+                      <Icon name="chevron-left" size={20} color={currentPage === 1 ? colors.warmGray : colors.deepNavy} />
+                      <Text style={[
+                        styles.modernPaginationButtonText,
+                        { color: currentPage === 1 ? colors.warmGray : colors.deepNavy }
+                      ]}>
+                        Previous
+                      </Text>
+                    </TouchableOpacity>
+
+                    <View style={styles.modernPaginationNumbers}>
+                      {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                        let pageNumber;
+                        if (totalPages <= 5) {
+                          pageNumber = i + 1;
+                        } else if (currentPage <= 3) {
+                          pageNumber = i + 1;
+                        } else if (currentPage >= totalPages - 2) {
+                          pageNumber = totalPages - 4 + i;
+                        } else {
+                          pageNumber = currentPage - 2 + i;
+                        }
+
+                        return (
+                          <TouchableOpacity
+                            key={pageNumber}
+                            style={[
+                              styles.modernPageNumber,
+                              { borderColor: colors.lightGray },
+                              currentPage === pageNumber && { 
+                                backgroundColor: colors.deepNavy,
+                                borderColor: colors.deepNavy
+                              }
+                            ]}
+                            onPress={() => handlePageChange(pageNumber)}
+                          >
+                            <Text style={[
+                              styles.modernPageNumberText,
+                              { color: colors.deepNavy },
+                              currentPage === pageNumber && { color: colors.white }
+                            ]}>
+                              {pageNumber}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+
+                    <TouchableOpacity
+                      style={[
+                        styles.modernPaginationButton,
+                        { borderColor: colors.lightGray },
+                        currentPage === totalPages && styles.modernPaginationButtonDisabled
+                      ]}
+                      onPress={() => handlePageChange(currentPage + 1)}
+                      disabled={currentPage === totalPages}
+                    >
+                      <Text style={[
+                        styles.modernPaginationButtonText,
+                        { color: currentPage === totalPages ? colors.warmGray : colors.deepNavy }
+                      ]}>
+                        Next
+                      </Text>
+                      <Icon name="chevron-right" size={20} color={currentPage === totalPages ? colors.warmGray : colors.deepNavy} />
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+      
+      {/* Language dropdown overlay */}
+      {showLanguageMenu && (
+        <View style={styles.fullScreenDropdownOverlay}>
+          <TouchableOpacity 
+            style={styles.fullScreenTouchArea}
+            onPress={() => setShowLanguageMenu(false)}
+            activeOpacity={1}
+          />
+          <View style={[styles.absoluteLanguageDropdown, { top: dropdownPosition.top, right: dropdownPosition.right }]}>
+            {languageOptions.map((language, index) => (
+              <TouchableOpacity
+                key={language.code}
+                style={[
+                  styles.languageOption,
+                  currentLanguage === language.code && styles.languageOptionActive,
+                  index === languageOptions.length - 1 && { borderBottomWidth: 0 }
+                ]}
+                onPress={() => changeLanguage(language.code)}
+              >
+                <Text style={styles.languageLabel}>{language.label}</Text>
+                {currentLanguage === language.code && (
+                  <Icon name="check" size={16} color={colors.beeYellow} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -3380,6 +4853,22 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
           >
             <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
           </TouchableOpacity>
+          {user && userData?.role === 'user' && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyRegistration')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>Be a Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && userData?.role === 'company' && userData?.companyProfile && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyDashboard')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>To Company</Text>
+            </TouchableOpacity>
+          )}
           {user && (
             <TouchableOpacity 
               style={[styles.toolbarNavButton, styles.toolbarBookmarksButton]}
@@ -3393,7 +4882,7 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
             <TouchableOpacity 
-              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.lightGray }]}
               onPress={() => setShowLanguageMenu(!showLanguageMenu)}
             >
               <Icon name="language" size={20} color={colors.deepNavy} />
@@ -3502,12 +4991,12 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
         </View>
       </View>
 
-      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: colors.cream }]}>
+      <ScrollView style={[styles.jobsPageContainer, { backgroundColor: isDarkMode ? '#1A1D23' : colors.cream }]}>
         {/* Hero Section */}
         <View style={[styles.bookmarksHeroSection, { backgroundColor: colors.deepNavy }]}>
           <View style={styles.heroBackgroundDecor}>
-            <View style={[styles.heroCircle1, { backgroundColor: colors.beeYellow + '15' }]} />
-            <View style={[styles.heroCircle2, { backgroundColor: colors.softBlue + '15' }]} />
+            <View style={[styles.heroCircle1, { backgroundColor: `${colors.beeYellow}15` }]} />
+            <View style={[styles.heroCircle2, { backgroundColor: `${colors.softBlue}15` }]} />
           </View>
           
           <View style={styles.bookmarksHeroContent}>
@@ -3547,8 +5036,8 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
                 style={[styles.bookmarksEmptyButton, { backgroundColor: colors.beeYellow }]}
                 onPress={() => navigation.navigate('Jobs')}
               >
-                <Icon name="search" size={20} color={colors.deepNavy} />
-                <Text style={[styles.bookmarksEmptyButtonText, { color: colors.deepNavy }]}>
+                <Icon name="search" size={20} color={colors.buttonTextOnYellow} />
+                <Text style={[styles.bookmarksEmptyButtonText, { color: colors.buttonTextOnYellow }]}>
                   Browse Jobs
                 </Text>
               </TouchableOpacity>
@@ -3593,7 +5082,7 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
                         )}
                       </View>
                       <TouchableOpacity 
-                        style={[styles.modernRemoveBookmarkButton, { backgroundColor: colors.danger + '10' }]}
+                        style={[styles.modernRemoveBookmarkButton, { backgroundColor: `${colors.danger}10` }]}
                         onPress={(e) => {
                           e.stopPropagation();
                           Alert.alert(
@@ -3622,19 +5111,19 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
                       {/* Tags */}
                       <View style={styles.modernBookmarkTags}>
                         {job.contractType && (
-                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.softBlue + '20', borderColor: colors.softBlue }]}>
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: `${colors.softBlue}20`, borderColor: colors.softBlue }]}>
                             <Icon name="work-outline" size={12} color={colors.softBlue} />
                             <Text style={[styles.modernBookmarkTagText, { color: colors.softBlue }]}>{job.contractType}</Text>
                           </View>
                         )}
                         {job.isRemote && (
-                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.success + '20', borderColor: colors.success }]}>
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: `${colors.success}20`, borderColor: colors.success }]}>
                             <Icon name="home-work" size={12} color={colors.success} />
                             <Text style={[styles.modernBookmarkTagText, { color: colors.success }]}>Remote</Text>
                           </View>
                         )}
                         {job.location && (
-                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.cream, borderColor: colors.warmGray + '40' }]}>
+                          <View style={[styles.modernBookmarkTag, { backgroundColor: colors.cream, borderColor: `${colors.warmGray}40` }]}>
                             <Icon name="location-on" size={12} color={colors.warmGray} />
                             <Text style={[styles.modernBookmarkTagText, { color: colors.warmGray }]} numberOfLines={1}>
                               {job.location}
@@ -3645,7 +5134,7 @@ function BookmarksScreen({ navigation, isDarkMode, toggleTheme }: any) {
 
                       {/* Salary */}
                       {job.salary && (
-                        <View style={[styles.modernBookmarkSalary, { backgroundColor: colors.success + '10' }]}>
+                        <View style={[styles.modernBookmarkSalary, { backgroundColor: `${colors.success}10` }]}>
                           <Icon name="payments" size={16} color={colors.success} />
                           <Text style={[styles.modernBookmarkSalaryText, { color: colors.success }]}>
                             {job.salary}
@@ -3683,14 +5172,112 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
   const [user, setUser] = useState<any>(null);
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [selectedMenu, setSelectedMenu] = useState<string>('profile');
+  const [selectedMenu, setSelectedMenu] = useState<string>('');
   const [bookmarkedJobs, setBookmarkedJobs] = useState<string[]>([]);
   const [selectedLanguage, setSelectedLanguage] = useState('English');
   const [showLanguageMenu, setShowLanguageMenu] = useState(false);
+  const languageButtonRef = useRef<any>(null);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, right: 0 });
+  const [currentLanguage, setCurrentLanguage] = useState('en');
   
   const colors = isDarkMode ? darkColors : lightColors;
 
+  // Function to update URL parameter
+  const updateURLParam = (menu: string) => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (menu) {
+        url.searchParams.set('section', menu);
+      } else {
+        url.searchParams.delete('section');
+      }
+      window.history.pushState({}, '', url);
+    }
+  };
+
+  // Function to handle menu selection with URL update
+  const handleMenuSelect = (menuId: string) => {
+    setSelectedMenu(menuId);
+    updateURLParam(menuId);
+  };
+
+  // Function to handle menu close with URL update
+  const handleMenuClose = () => {
+    setSelectedMenu('');
+    updateURLParam('');
+  };
+
+  // Read URL parameter on mount
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      const section = url.searchParams.get('section');
+      if (section) {
+        setSelectedMenu(section);
+      }
+    }
+  }, []);
+
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const handlePopState = () => {
+        const url = new URL(window.location.href);
+        const section = url.searchParams.get('section');
+        setSelectedMenu(section || '');
+      };
+
+      window.addEventListener('popstate', handlePopState);
+      return () => window.removeEventListener('popstate', handlePopState);
+    }
+  }, []);
+  
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'am', label: 'አማርኛ' },
+    { code: 'ti', label: 'ትግርኛ' },
+    { code: 'or', label: 'Afaan Oromoo' }
+  ];
+  
+  const getCurrentLanguage = () => {
+    return languageOptions.find(lang => lang.code === currentLanguage) || languageOptions[0];
+  };
+  
+  const toggleLanguageDropdown = () => {
+    if (!showLanguageMenu && languageButtonRef.current) {
+      languageButtonRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+        setDropdownPosition({
+          top: y + height + 5,
+          right: typeof window !== 'undefined' ? window.innerWidth - x - width : 0,
+        });
+      });
+    }
+    setShowLanguageMenu(!showLanguageMenu);
+  };
+  
+  const changeLanguage = async (langCode: string) => {
+    setCurrentLanguage(langCode);
+    setSelectedLanguage(languageOptions.find(lang => lang.code === langCode)?.label || 'English');
+    setShowLanguageMenu(false);
+    try {
+      await AsyncStorage.setItem('selectedLanguage', langCode);
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+    }
+  };
+
+  useEffect(() => {
+    const initializeSettings = async () => {
+      // Load saved language
+      const savedLanguage = await AsyncStorage.getItem('selectedLanguage');
+      if (savedLanguage) {
+        setCurrentLanguage(savedLanguage);
+        setSelectedLanguage(languageOptions.find(lang => lang.code === savedLanguage)?.label || 'English');
+      }
+    };
+    
+    initializeSettings();
+    
     const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
       if (authUser) {
         setUser(authUser);
@@ -3700,7 +5287,6 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
           const data = userDoc.data();
           setUserData(data);
           setBookmarkedJobs(data.bookmarkedJobs || []);
-          setSelectedLanguage(data.language || 'English');
         }
       } else {
         navigation.replace('Login');
@@ -3713,53 +5299,74 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
 
   const settingsMenuItems = [
     {
-      id: 'profile',
-      title: 'Profile',
-      subtitle: 'Personal information',
-      icon: 'person-outline',
+      id: 'portfolio',
+      title: 'Portfolio',
+      subtitle: 'CV, skills & experience',
+      icon: 'work',
+      color: '#F4C430',
     },
     {
-      id: 'appearance',
-      title: 'Appearance',
-      subtitle: 'Theme preferences',
-      icon: 'palette',
+      id: 'account',
+      title: 'Account',
+      subtitle: 'Profile & security',
+      icon: 'person',
+      color: '#4A90E2',
     },
     {
-      id: 'language',
-      title: 'Language',
-      subtitle: userData?.language || 'English',
-      icon: 'language',
+      id: 'preferences',
+      title: 'Preferences',
+      subtitle: 'Theme & language',
+      icon: 'tune',
+      color: '#9B59B6',
     },
     {
-      id: 'interests',
-      title: 'Job Interests',
-      subtitle: 'Preferred categories',
-      icon: 'work-outline',
+      id: 'notifications',
+      title: 'Notifications',
+      subtitle: 'Manage alerts',
+      icon: 'notifications',
+      color: '#E67E22',
+    },
+    {
+      id: 'privacy',
+      title: 'Privacy & Security',
+      subtitle: 'Data & permissions',
+      icon: 'security',
+      color: '#27AE60',
     },
     {
       id: 'subscription',
       title: 'Subscription',
       subtitle: userData?.subscriptionPlan || 'Free Plan',
       icon: 'card-membership',
+      color: '#F4C430',
+    },
+    {
+      id: 'help',
+      title: 'Help & Support',
+      subtitle: 'FAQs & contact',
+      icon: 'help',
+      color: '#3498DB',
     },
   ];
 
   const renderSettingsContent = () => {
-    const props = { userData, user, isDarkMode, toggleTheme, colors, navigation };
+    const props = { userData, user, isDarkMode, toggleTheme, colors, navigation, currentLanguage, setCurrentLanguage, changeLanguage };
     
     switch (selectedMenu) {
-      case 'profile':
-        return <SettingsProfileContent {...props} />;
-      case 'appearance':
-        return <SettingsAppearanceContent {...props} />;
-      case 'language':
-        return <SettingsLanguageContent {...props} />;
-      case 'interests':
-        return <SettingsInterestsContent {...props} />;
+      case 'account':
+        return <SettingsAccountContent {...props} />;
+      case 'preferences':
+        return <SettingsPreferencesContent {...props} />;
+      case 'notifications':
+        return <SettingsNotificationsContent {...props} />;
+      case 'privacy':
+        return <SettingsPrivacyContent {...props} />;
       case 'subscription':
         return <SettingsSubscriptionContent {...props} />;
+      case 'help':
+        return <SettingsHelpContent {...props} />;
       default:
-        return null;
+        return <SettingsAccountContent {...props} />;
     }
   };
 
@@ -3787,45 +5394,36 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
           >
             <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy }]}>Companies</Text>
           </TouchableOpacity>
+          {user && userData?.role === 'user' && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyRegistration')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>Be a Company</Text>
+            </TouchableOpacity>
+          )}
+          {user && userData?.role === 'company' && userData?.companyProfile && (
+            <TouchableOpacity 
+              style={[styles.toolbarNavButton, { backgroundColor: colors.beeYellow, paddingHorizontal: 16, borderRadius: 8 }]}
+              onPress={() => navigation.navigate('CompanyDashboard')}
+            >
+              <Text style={[styles.toolbarNavButtonText, { color: colors.deepNavy, fontWeight: '600' }]}>To Company</Text>
+            </TouchableOpacity>
+          )}
           
           {/* Language Selector */}
           <View style={styles.toolbarLanguageContainer}>
             <TouchableOpacity 
-              style={[styles.toolbarLanguageButton, { backgroundColor: colors.cream }]}
-              onPress={() => setShowLanguageMenu(!showLanguageMenu)}
+              ref={languageButtonRef}
+              style={[styles.toolbarLanguageButton, { backgroundColor: colors.lightGray }]}
+              onPress={toggleLanguageDropdown}
             >
               <Icon name="language" size={20} color={colors.deepNavy} />
               <Text style={[styles.toolbarLanguageText, { color: colors.deepNavy }]}>
-                {selectedLanguage}
+                {getCurrentLanguage().code.toUpperCase()}
               </Text>
-              <Icon name="arrow-drop-down" size={20} color={colors.deepNavy} />
+              <Icon name={showLanguageMenu ? "expand-less" : "expand-more"} size={20} color={colors.deepNavy} />
             </TouchableOpacity>
-            
-            {showLanguageMenu && (
-              <View style={[styles.languageMenu, { backgroundColor: colors.white }]}>
-                {['English', 'Amharic', 'Oromifa'].map((lang) => (
-                  <TouchableOpacity
-                    key={lang}
-                    style={styles.languageMenuItem}
-                    onPress={() => {
-                      setSelectedLanguage(lang);
-                      setShowLanguageMenu(false);
-                    }}
-                  >
-                    <Text style={[
-                      styles.languageMenuItemText,
-                      { color: colors.deepNavy },
-                      selectedLanguage === lang && { color: colors.beeYellow, fontWeight: '600' }
-                    ]}>
-                      {lang}
-                    </Text>
-                    {selectedLanguage === lang && (
-                      <Icon name="check" size={16} color={colors.beeYellow} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
           </View>
         </View>
         
@@ -3905,88 +5503,246 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
           <ActivityIndicator size="large" color={colors.beeYellow} />
         </View>
       ) : (
-        <View style={styles.settingsSplitContainer}>
-          {/* Left Sidebar Menu - Modernized */}
-          <View style={[styles.settingsSidebar, { backgroundColor: colors.white }]}>
-            <ScrollView showsVerticalScrollIndicator={false}>
-              {/* Compact Profile Header */}
-              <View style={[styles.modernProfileHeader, { borderBottomColor: colors.lightGray }]}>
+        <ScrollView style={{ flex: 1, backgroundColor: colors.cream }} showsVerticalScrollIndicator={false}>
+          {/* Modern Hero Section */}
+          <View style={[styles.settingsHeroSection, { backgroundColor: colors.white }]}>
+            <View style={styles.settingsHeroContent}>
+              <View style={styles.settingsHeroLeft}>
                 {userData?.profilePicture ? (
                   <Image 
                     source={{ uri: userData.profilePicture }} 
-                    style={styles.modernProfileImage}
+                    style={styles.settingsHeroAvatar}
                   />
                 ) : (
-                  <View style={[styles.modernProfileImagePlaceholder, { backgroundColor: colors.beeYellow }]}>
-                    <Icon name="person" size={32} color={colors.deepNavy} />
+                  <View style={[styles.settingsHeroAvatarPlaceholder, { backgroundColor: colors.beeYellow }]}>
+                    <Icon name="person" size={48} color={colors.deepNavy} />
                   </View>
                 )}
-                <View style={styles.modernProfileInfo}>
-                  <Text style={[styles.modernProfileName, { color: colors.deepNavy }]} numberOfLines={1}>
+                <View style={styles.settingsHeroInfo}>
+                  <Text style={[styles.settingsHeroName, { color: colors.deepNavy }]}>
                     {userData?.displayName || user?.email?.split('@')[0] || 'User'}
                   </Text>
-                  <Text style={[styles.modernProfileEmail, { color: colors.warmGray }]} numberOfLines={1}>
+                  <Text style={[styles.settingsHeroEmail, { color: colors.warmGray }]}>
                     {user?.email}
                   </Text>
+                  {userData?.username && (
+                    <TouchableOpacity 
+                      style={styles.settingsHeroUsernameContainer}
+                      onPress={() => {
+                        const profileUrl = `https://nibjobs.com/@${userData.username}`;
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          navigator.clipboard.writeText(profileUrl);
+                          Alert.alert('Copied!', 'Profile link copied to clipboard');
+                        }
+                      }}
+                    >
+                      <Text style={[styles.settingsHeroUsername, { color: colors.softBlue }]}>
+                        @{userData.username}
+                      </Text>
+                      <Icon name="content-copy" size={16} color={colors.softBlue} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
+              <TouchableOpacity 
+                style={[styles.settingsEditProfileButton, { borderColor: colors.beeYellow }]}
+                onPress={() => handleMenuSelect('account')}
+              >
+                <Icon name="edit" size={18} color={colors.beeYellow} />
+                <Text style={[styles.settingsEditProfileText, { color: colors.beeYellow }]}>Edit Profile</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
 
-              {/* Menu Items - Simplified */}
-              <View style={styles.modernMenuContainer}>
-                {settingsMenuItems.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[
-                      styles.modernMenuItem,
-                      selectedMenu === item.id && [
-                        styles.modernMenuItemActive,
-                        { backgroundColor: colors.cream, borderLeftColor: colors.beeYellow }
-                      ]
-                    ]}
-                    onPress={() => setSelectedMenu(item.id)}
-                    activeOpacity={0.7}
-                  >
-                    <Icon 
-                      name={item.icon} 
-                      size={22} 
-                      color={selectedMenu === item.id ? colors.beeYellow : colors.warmGray} 
-                    />
-                    <View style={styles.modernMenuTextContainer}>
-                      <Text style={[
-                        styles.modernMenuTitle, 
-                        { color: colors.deepNavy },
-                        selectedMenu === item.id && styles.modernMenuTitleActive
-                      ]}>
-                        {item.title}
-                      </Text>
-                    </View>
-                    {selectedMenu === item.id && (
-                      <Icon name="chevron-right" size={18} color={colors.beeYellow} />
-                    )}
-                  </TouchableOpacity>
-                ))}
-              </View>
-
-              {/* Logout Button - Minimalist */}
+          {/* Settings Grid */}
+          <View style={styles.settingsGridContainer}>
+            {settingsMenuItems.map((item) => (
               <TouchableOpacity
-                style={[styles.modernLogoutButton, { borderTopColor: colors.lightGray }]}
-                onPress={async () => {
-                  await signOut(auth);
-                  navigation.replace('Home');
-                }}
+                key={item.id}
+                style={[styles.settingsCard, { backgroundColor: colors.white }]}
+                onPress={() => handleMenuSelect(item.id)}
                 activeOpacity={0.7}
               >
-                <Icon name="logout" size={20} color={colors.error} />
-                <Text style={[styles.modernLogoutText, { color: colors.error }]}>
+                <View style={[styles.settingsCardIconContainer, { backgroundColor: `${item.color}15` }]}>
+                  <Icon name={item.icon} size={28} color={item.color} />
+                </View>
+                <View style={styles.settingsCardContent}>
+                  <Text style={[styles.settingsCardTitle, { color: colors.deepNavy }]}>
+                    {item.title}
+                  </Text>
+                  <Text style={[styles.settingsCardSubtitle, { color: colors.warmGray }]}>
+                    {item.subtitle}
+                  </Text>
+                </View>
+                <Icon name="chevron-right" size={24} color={colors.warmGray} />
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Quick Actions */}
+          <View style={styles.settingsQuickActions}>
+            <Text style={[styles.settingsQuickActionsTitle, { color: colors.deepNavy }]}>
+              Quick Actions
+            </Text>
+            <View style={styles.settingsQuickActionsGrid}>
+              <TouchableOpacity 
+                style={[styles.settingsQuickActionCard, { backgroundColor: colors.white }]}
+                onPress={() => navigation.navigate('Bookmarks')}
+              >
+                <Icon name="bookmark" size={24} color={colors.beeYellow} />
+                <Text style={[styles.settingsQuickActionText, { color: colors.deepNavy }]}>
+                  Saved Jobs
+                </Text>
+                <Text style={[styles.settingsQuickActionCount, { color: colors.warmGray }]}>
+                  {bookmarkedJobs.length}
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.settingsQuickActionCard, { backgroundColor: colors.white }]}
+                onPress={() => navigation.navigate('Jobs')}
+              >
+                <Icon name="work" size={24} color="#4A90E2" />
+                <Text style={[styles.settingsQuickActionText, { color: colors.deepNavy }]}>
+                  Browse Jobs
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.settingsQuickActionCard, { backgroundColor: colors.white }]}
+                onPress={async () => {
+                  Alert.alert(
+                    'Logout',
+                    'Are you sure you want to logout?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      { 
+                        text: 'Logout', 
+                        style: 'destructive',
+                        onPress: async () => {
+                          await signOut(auth);
+                          navigation.replace('Home');
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Icon name="logout" size={24} color={colors.error} />
+                <Text style={[styles.settingsQuickActionText, { color: colors.deepNavy }]}>
                   Logout
                 </Text>
               </TouchableOpacity>
-            </ScrollView>
+            </View>
           </View>
 
-          {/* Right Content Area - Clean Layout */}
-          <View style={[styles.settingsContentArea, { backgroundColor: colors.cream }]}>
+          {/* Footer */}
+          <View style={styles.settingsFooter}>
+            <Text style={[styles.settingsFooterText, { color: colors.warmGray }]}>
+              NibJobs v2.0 • Made with ❤️ in Ethiopia
+            </Text>
+          </View>
+        </ScrollView>
+      )}
+      
+      {/* Settings Detail Modal */}
+      <Modal
+        visible={selectedMenu !== '' && selectedMenu !== 'account' && selectedMenu !== 'portfolio'}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={handleMenuClose}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+          <View style={[styles.settingsModalHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+            <TouchableOpacity onPress={handleMenuClose} style={styles.settingsModalBackButton}>
+              <Icon name="close" size={24} color={colors.deepNavy} />
+            </TouchableOpacity>
+            <Text style={[styles.settingsModalTitle, { color: colors.deepNavy }]}>
+              {settingsMenuItems.find(item => item.id === selectedMenu)?.title}
+            </Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
             {renderSettingsContent()}
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* Portfolio Settings (Full Page) */}
+      {selectedMenu === 'portfolio' && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={handleMenuClose}
+        >
+          <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+            <View style={[styles.settingsModalHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+              <TouchableOpacity onPress={handleMenuClose} style={styles.settingsModalBackButton}>
+                <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+              <Text style={[styles.settingsModalTitle, { color: colors.deepNavy }]}>
+                Portfolio
+              </Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              <SettingsPortfolioContent {...{ userData, user, colors, navigation }} />
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
+
+      {/* Account Settings (Full Page) */}
+      {selectedMenu === 'account' && (
+        <Modal
+          visible={true}
+          animationType="slide"
+          presentationStyle="fullScreen"
+          onRequestClose={handleMenuClose}
+        >
+          <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+            <View style={[styles.settingsModalHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+              <TouchableOpacity onPress={handleMenuClose} style={styles.settingsModalBackButton}>
+                <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+              </TouchableOpacity>
+              <Text style={[styles.settingsModalTitle, { color: colors.deepNavy }]}>
+                Account Settings
+              </Text>
+              <View style={{ width: 40 }} />
+            </View>
+            <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+              <SettingsAccountContent {...{ userData, user, isDarkMode, toggleTheme, colors, navigation }} />
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
+      
+      {/* Language dropdown overlay (same as JobsScreen) */}
+      {showLanguageMenu && (
+        <View style={styles.fullScreenDropdownOverlay}>
+          <TouchableOpacity 
+            style={styles.fullScreenTouchArea}
+            onPress={() => setShowLanguageMenu(false)}
+            activeOpacity={1}
+          />
+          <View style={[styles.absoluteLanguageDropdown, { top: dropdownPosition.top, right: dropdownPosition.right }]}>
+            {languageOptions.map((language, index) => (
+              <TouchableOpacity
+                key={language.code}
+                style={[
+                  styles.languageOption,
+                  currentLanguage === language.code && styles.languageOptionActive,
+                  index === languageOptions.length - 1 && { borderBottomWidth: 0 }
+                ]}
+                onPress={() => changeLanguage(language.code)}
+              >
+                <Text style={styles.languageLabel}>{language.label}</Text>
+                {currentLanguage === language.code && (
+                  <Icon name="check" size={16} color={colors.beeYellow} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       )}
@@ -3994,15 +5750,68 @@ function SettingsScreen({ navigation, isDarkMode, toggleTheme }: any) {
   );
 }
 
-// Settings Content Components (inline versions without headers)
+// Settings Content Components
 
-function SettingsProfileContent({ userData, user, colors }: any) {
-  const [displayName, setDisplayName] = useState(userData?.displayName || '');
-  const [dateOfBirth, setDateOfBirth] = useState(userData?.dateOfBirth || '');
-  const [bio, setBio] = useState(userData?.bio || '');
-  const [profilePicture, setProfilePicture] = useState(userData?.profilePicture || '');
+function SettingsAccountContent({ userData, user, colors }: any) {
+  const [displayName, setDisplayName] = useState('');
+  const [username, setUsername] = useState('');
+  const [dateOfBirth, setDateOfBirth] = useState('');
+  const [bio, setBio] = useState('');
+  const [profilePicture, setProfilePicture] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const [checkingUsername, setCheckingUsername] = useState(false);
+  
+  // Update state when userData loads
+  useEffect(() => {
+    if (userData) {
+      setDisplayName(userData.displayName || '');
+      setUsername(userData.username || '');
+      setDateOfBirth(userData.dateOfBirth || '');
+      setBio(userData.bio || '');
+      setProfilePicture(userData.profilePicture || '');
+    }
+  }, [userData]);
+  
+  // Check username availability
+  const checkUsernameAvailability = async (usernameToCheck: string) => {
+    if (!usernameToCheck || usernameToCheck.length < 3) {
+      setUsernameAvailable(null);
+      return;
+    }
+    
+    // Don't check if it's the same as current username
+    if (usernameToCheck.toLowerCase() === userData?.username?.toLowerCase()) {
+      setUsernameAvailable(true);
+      return;
+    }
+    
+    setCheckingUsername(true);
+    try {
+      const usernameQuery = dbQuery(
+        collection(db, 'users'),
+        where('username', '==', usernameToCheck.toLowerCase())
+      );
+      const querySnapshot = await getDocs(usernameQuery);
+      setUsernameAvailable(querySnapshot.empty);
+    } catch (error) {
+      console.error('Error checking username:', error);
+      setUsernameAvailable(null);
+    }
+    setCheckingUsername(false);
+  };
+  
+  // Debounced username check
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      if (username && username !== userData?.username) {
+        checkUsernameAvailability(username);
+      }
+    }, 500);
+    
+    return () => clearTimeout(timeoutId);
+  }, [username]);
 
   const pickImage = async () => {
     try {
@@ -4060,11 +5869,28 @@ function SettingsProfileContent({ userData, user, colors }: any) {
 
   const saveProfile = async () => {
     if (!user) return;
+    
+    // Validate username
+    if (username.length < 3) {
+      Alert.alert('Error', 'Username must be at least 3 characters long');
+      return;
+    }
+    
+    if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      Alert.alert('Error', 'Username can only contain letters, numbers, and underscores');
+      return;
+    }
+    
+    if (username !== userData?.username && !usernameAvailable) {
+      Alert.alert('Error', 'This username is already taken');
+      return;
+    }
 
     try {
       setSaving(true);
       await updateDoc(doc(db, 'users', user.uid), {
         displayName,
+        username: username.toLowerCase(),
         dateOfBirth,
         bio,
         profilePicture,
@@ -4102,8 +5928,8 @@ function SettingsProfileContent({ userData, user, colors }: any) {
               onPress={pickImage}
               disabled={uploading}
             >
-              <Icon name="cloud-upload" size={20} color={colors.deepNavy} />
-              <Text style={[styles.modernUploadButtonText, { color: colors.deepNavy }]}>
+              <Icon name="cloud-upload" size={20} color={colors.buttonTextOnYellow} />
+              <Text style={[styles.modernUploadButtonText, { color: colors.buttonTextOnYellow }]}>
                 {uploading ? 'Uploading...' : 'Change Photo'}
               </Text>
             </TouchableOpacity>
@@ -4119,6 +5945,38 @@ function SettingsProfileContent({ userData, user, colors }: any) {
               value={displayName}
               onChangeText={setDisplayName}
             />
+          </View>
+          
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Username</Text>
+              {checkingUsername && (
+                <Text style={{ fontSize: 12, color: colors.warmGray }}>Checking...</Text>
+              )}
+              {!checkingUsername && usernameAvailable === true && username !== userData?.username && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon name="check-circle" size={16} color="#22c55e" />
+                  <Text style={{ fontSize: 12, color: '#22c55e' }}>Available</Text>
+                </View>
+              )}
+              {!checkingUsername && usernameAvailable === false && username !== userData?.username && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Icon name="cancel" size={16} color="#ef4444" />
+                  <Text style={{ fontSize: 12, color: '#ef4444' }}>Taken</Text>
+                </View>
+              )}
+            </View>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Enter your username"
+              placeholderTextColor={colors.warmGray}
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+            />
+            <Text style={[styles.modernInputHint, { color: colors.warmGray }]}>
+              Letters, numbers, and underscores only (min 3 characters)
+            </Text>
           </View>
 
           <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
@@ -4153,7 +6011,7 @@ function SettingsProfileContent({ userData, user, colors }: any) {
             <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Email</Text>
             <TextInput
               style={[styles.modernTextInput, styles.modernTextInputDisabled, { backgroundColor: colors.lightGray, color: colors.warmGray }]}
-              value={user?.email}
+              value={user?.email || ''}
               editable={false}
             />
           </View>
@@ -4164,11 +6022,11 @@ function SettingsProfileContent({ userData, user, colors }: any) {
             disabled={saving}
           >
             {saving ? (
-              <ActivityIndicator size="small" color={colors.deepNavy} />
+              <ActivityIndicator size="small" color={colors.buttonTextOnYellow} />
             ) : (
               <>
-                <Icon name="check" size={20} color={colors.deepNavy} />
-                <Text style={[styles.modernSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+                <Icon name="check" size={20} color={colors.buttonTextOnYellow} />
+                <Text style={[styles.modernSaveButtonText, { color: colors.buttonTextOnYellow }]}>Save Changes</Text>
               </>
             )}
           </TouchableOpacity>
@@ -4178,21 +6036,481 @@ function SettingsProfileContent({ userData, user, colors }: any) {
   );
 }
 
-function SettingsAppearanceContent({ colors, isDarkMode, toggleTheme }: any) {
+function SettingsPortfolioContent({ userData, user, colors, navigation }: any) {
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [cvUploading, setCvUploading] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  
+  // Portfolio data
+  const [jobTitle, setJobTitle] = useState('');
+  const [company, setCompany] = useState('');
+  const [experience, setExperience] = useState('');
+  const [skills, setSkills] = useState('');
+  const [education, setEducation] = useState('');
+  const [achievements, setAchievements] = useState('');
+  const [cvUrl, setCvUrl] = useState('');
+  const [portfolioUrl, setPortfolioUrl] = useState('');
+  const [linkedin, setLinkedin] = useState('');
+  const [github, setGithub] = useState('');
+  
+  // Update state when userData loads
+  useEffect(() => {
+    if (userData?.portfolio) {
+      setJobTitle(userData.portfolio.jobTitle || '');
+      setCompany(userData.portfolio.company || '');
+      setExperience(userData.portfolio.experience || '');
+      setSkills(userData.portfolio.skills || '');
+      setEducation(userData.portfolio.education || '');
+      setAchievements(userData.portfolio.achievements || '');
+      setCvUrl(userData.portfolio.cvUrl || '');
+      setPortfolioUrl(userData.portfolio.portfolioUrl || '');
+      setLinkedin(userData.portfolio.linkedin || '');
+      setGithub(userData.portfolio.github || '');
+    }
+  }, [userData]);
+  
+  const pickCV = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.type === 'success') {
+        setCvUploading(true);
+        await uploadCV(result.uri, result.name);
+      }
+    } catch (error) {
+      console.error('Error picking CV:', error);
+      Alert.alert('Error', 'Failed to pick CV file');
+    } finally {
+      setCvUploading(false);
+    }
+  };
+
+  const uploadCV = async (uri: string, filename: string) => {
+    if (!user) return;
+
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+
+      const storageFilename = `cvs/${user.uid}_${Date.now()}_${filename}`;
+      const storageRef = ref(storage, storageFilename);
+
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      setCvUrl(downloadURL);
+      Alert.alert('Success', 'CV uploaded successfully!');
+    } catch (error) {
+      console.error('Error uploading CV:', error);
+      Alert.alert('Error', 'Failed to upload CV');
+    }
+  };
+
+  const savePortfolio = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        portfolio: {
+          jobTitle,
+          company,
+          experience,
+          skills,
+          education,
+          achievements,
+          cvUrl,
+          portfolioUrl,
+          linkedin,
+          github,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      Alert.alert('Success', 'Portfolio updated successfully!');
+    } catch (error) {
+      console.error('Error updating portfolio:', error);
+      Alert.alert('Error', 'Failed to update portfolio');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const getProfileLink = () => {
+    const username = userData?.username || user?.uid;
+    return `https://nibjobs.com/profile/${username}`;
+  };
+
+  const copyProfileLink = () => {
+    const link = getProfileLink();
+    if (typeof navigator !== 'undefined' && navigator.clipboard) {
+      navigator.clipboard.writeText(link);
+      Alert.alert('Copied!', 'Profile link copied to clipboard');
+    } else {
+      Alert.alert('Profile Link', link);
+    }
+  };
+
   return (
     <ScrollView style={styles.settingsContentScroll} showsVerticalScrollIndicator={false}>
       <View style={styles.settingsContentSection}>
-        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Appearance</Text>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Portfolio</Text>
         <Text style={[styles.settingsContentSubtitle, { color: colors.warmGray }]}>
-          Customize how NibJobs looks for you
+          Build your professional profile to stand out to employers
+        </Text>
+
+        {/* Profile Link Section */}
+        <View style={[styles.portfolioLinkCard, { backgroundColor: colors.white }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <View style={[styles.modernIconCircle, { backgroundColor: `${colors.softBlue}20` }]}>
+              <Icon name="link" size={24} color={colors.softBlue} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.portfolioLinkTitle, { color: colors.deepNavy }]}>Your Profile Link</Text>
+              <Text style={[styles.portfolioLinkSubtitle, { color: colors.warmGray }]}>
+                Share this link with employers
+              </Text>
+            </View>
+          </View>
+          <View style={[styles.portfolioLinkBox, { backgroundColor: colors.cream }]}>
+            <Text style={[styles.portfolioLinkText, { color: colors.deepNavy }]} numberOfLines={1}>
+              {getProfileLink()}
+            </Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 12, marginTop: 12 }}>
+            <TouchableOpacity 
+              style={[styles.portfolioActionButton, { backgroundColor: colors.beeYellow, flex: 1 }]}
+              onPress={copyProfileLink}
+            >
+              <Icon name="content-copy" size={18} color={colors.buttonTextOnYellow} />
+              <Text style={[styles.portfolioActionButtonText, { color: colors.buttonTextOnYellow }]}>Copy Link</Text>
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={[styles.portfolioActionButton, { backgroundColor: colors.softBlue, flex: 1 }]}
+              onPress={() => setShowPreview(true)}
+            >
+              <Icon name="visibility" size={18} color={colors.white} />
+              <Text style={[styles.portfolioActionButtonText, { color: colors.white }]}>Preview</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* CV Upload Section */}
+        <View style={[styles.portfolioCVCard, { backgroundColor: colors.white }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+            <View style={[styles.modernIconCircle, { backgroundColor: `${colors.beeYellow}20` }]}>
+              <Icon name="description" size={24} color={colors.beeYellow} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.portfolioLinkTitle, { color: colors.deepNavy }]}>Upload CV</Text>
+              <Text style={[styles.portfolioLinkSubtitle, { color: colors.warmGray }]}>
+                PDF, DOC, or DOCX (Max 5MB)
+              </Text>
+            </View>
+          </View>
+          {cvUrl ? (
+            <View style={[styles.cvUploadedBox, { backgroundColor: colors.cream }]}>
+              <Icon name="check-circle" size={20} color={colors.success} />
+              <Text style={[styles.cvUploadedText, { color: colors.deepNavy }]}>CV Uploaded</Text>
+              <TouchableOpacity onPress={pickCV}>
+                <Text style={[styles.cvChangeText, { color: colors.softBlue }]}>Change</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              style={[styles.cvUploadButton, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}
+              onPress={pickCV}
+              disabled={cvUploading}
+            >
+              <Icon name="cloud-upload" size={24} color={colors.beeYellow} />
+              <Text style={[styles.cvUploadButtonText, { color: colors.deepNavy }]}>
+                {cvUploading ? 'Uploading...' : 'Upload CV'}
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <View style={styles.settingsSection}>
+          {/* Professional Info */}
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Current Job Title</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="e.g., Senior Software Engineer"
+              placeholderTextColor={colors.warmGray}
+              value={jobTitle}
+              onChangeText={setJobTitle}
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Current Company</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="e.g., Tech Company Inc."
+              placeholderTextColor={colors.warmGray}
+              value={company}
+              onChangeText={setCompany}
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Years of Experience</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="e.g., 5 years"
+              placeholderTextColor={colors.warmGray}
+              value={experience}
+              onChangeText={setExperience}
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Skills</Text>
+            <TextInput
+              style={[styles.modernTextInput, styles.modernTextArea, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="List your key skills (e.g., React, Node.js, Python, AWS)"
+              placeholderTextColor={colors.warmGray}
+              value={skills}
+              onChangeText={setSkills}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Education</Text>
+            <TextInput
+              style={[styles.modernTextInput, styles.modernTextArea, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Highest degree, institution, graduation year"
+              placeholderTextColor={colors.warmGray}
+              value={education}
+              onChangeText={setEducation}
+              multiline
+              numberOfLines={3}
+              textAlignVertical="top"
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Key Achievements</Text>
+            <TextInput
+              style={[styles.modernTextInput, styles.modernTextArea, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="Highlight your major accomplishments and awards"
+              placeholderTextColor={colors.warmGray}
+              value={achievements}
+              onChangeText={setAchievements}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+          </View>
+
+          {/* Social Links */}
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Portfolio Website</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="https://yourwebsite.com"
+              placeholderTextColor={colors.warmGray}
+              value={portfolioUrl}
+              onChangeText={setPortfolioUrl}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>LinkedIn Profile</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="https://linkedin.com/in/yourprofile"
+              placeholderTextColor={colors.warmGray}
+              value={linkedin}
+              onChangeText={setLinkedin}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          </View>
+
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>GitHub Profile</Text>
+            <TextInput
+              style={[styles.modernTextInput, { backgroundColor: colors.cream, color: colors.deepNavy }]}
+              placeholder="https://github.com/yourusername"
+              placeholderTextColor={colors.warmGray}
+              value={github}
+              onChangeText={setGithub}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+          </View>
+
+          <TouchableOpacity 
+            style={[styles.modernSaveButton, { backgroundColor: colors.beeYellow }, saving && styles.modernSaveButtonDisabled]}
+            onPress={savePortfolio}
+            disabled={saving}
+          >
+            {saving ? (
+              <ActivityIndicator size="small" color={colors.buttonTextOnYellow} />
+            ) : (
+              <>
+                <Icon name="check" size={20} color={colors.buttonTextOnYellow} />
+                <Text style={[styles.modernSaveButtonText, { color: colors.buttonTextOnYellow }]}>Save Portfolio</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Company Preview Modal */}
+      <Modal
+        visible={showPreview}
+        animationType="slide"
+        presentationStyle="fullScreen"
+        onRequestClose={() => setShowPreview(false)}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
+          <View style={[styles.settingsModalHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+            <TouchableOpacity onPress={() => setShowPreview(false)} style={styles.settingsModalBackButton}>
+              <Icon name="close" size={24} color={colors.deepNavy} />
+            </TouchableOpacity>
+            <Text style={[styles.settingsModalTitle, { color: colors.deepNavy }]}>
+              Company View
+            </Text>
+            <View style={{ width: 40 }} />
+          </View>
+          <ScrollView style={{ flex: 1, backgroundColor: colors.cream }} showsVerticalScrollIndicator={false}>
+            <View style={[styles.previewCard, { backgroundColor: colors.white }]}>
+              {/* Profile Header */}
+              <View style={styles.previewHeader}>
+                {userData?.profilePicture ? (
+                  <Image source={{ uri: userData.profilePicture }} style={styles.previewAvatar} />
+                ) : (
+                  <View style={[styles.previewAvatarPlaceholder, { backgroundColor: colors.beeYellow }]}>
+                    <Icon name="person" size={48} color={colors.deepNavy} />
+                  </View>
+                )}
+                <Text style={[styles.previewName, { color: colors.deepNavy }]}>
+                  {userData?.displayName || 'Your Name'}
+                </Text>
+                {jobTitle && (
+                  <Text style={[styles.previewJobTitle, { color: colors.warmGray }]}>{jobTitle}</Text>
+                )}
+                {company && (
+                  <Text style={[styles.previewCompany, { color: colors.softBlue }]}>{company}</Text>
+                )}
+              </View>
+
+              {/* Bio */}
+              {userData?.bio && (
+                <View style={styles.previewSection}>
+                  <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>About</Text>
+                  <Text style={[styles.previewSectionText, { color: colors.warmGray }]}>{userData.bio}</Text>
+                </View>
+              )}
+
+              {/* Experience */}
+              {experience && (
+                <View style={styles.previewSection}>
+                  <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>Experience</Text>
+                  <Text style={[styles.previewSectionText, { color: colors.warmGray }]}>{experience}</Text>
+                </View>
+              )}
+
+              {/* Skills */}
+              {skills && (
+                <View style={styles.previewSection}>
+                  <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>Skills</Text>
+                  <View style={styles.previewSkillsContainer}>
+                    {skills.split(',').map((skill: string, index: number) => (
+                      <View key={index} style={[styles.previewSkillChip, { backgroundColor: colors.cream }]}>
+                        <Text style={[styles.previewSkillText, { color: colors.deepNavy }]}>{skill.trim()}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+
+              {/* Education */}
+              {education && (
+                <View style={styles.previewSection}>
+                  <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>Education</Text>
+                  <Text style={[styles.previewSectionText, { color: colors.warmGray }]}>{education}</Text>
+                </View>
+              )}
+
+              {/* Achievements */}
+              {achievements && (
+                <View style={styles.previewSection}>
+                  <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>Achievements</Text>
+                  <Text style={[styles.previewSectionText, { color: colors.warmGray }]}>{achievements}</Text>
+                </View>
+              )}
+
+              {/* Links */}
+              <View style={styles.previewSection}>
+                <Text style={[styles.previewSectionTitle, { color: colors.deepNavy }]}>Links</Text>
+                {cvUrl && (
+                  <TouchableOpacity style={styles.previewLinkRow}>
+                    <Icon name="description" size={20} color={colors.beeYellow} />
+                    <Text style={[styles.previewLinkText, { color: colors.softBlue }]}>Download CV</Text>
+                  </TouchableOpacity>
+                )}
+                {portfolioUrl && (
+                  <TouchableOpacity style={styles.previewLinkRow}>
+                    <Icon name="link" size={20} color={colors.softBlue} />
+                    <Text style={[styles.previewLinkText, { color: colors.softBlue }]}>Portfolio Website</Text>
+                  </TouchableOpacity>
+                )}
+                {linkedin && (
+                  <TouchableOpacity style={styles.previewLinkRow}>
+                    <Icon name="link" size={20} color={colors.softBlue} />
+                    <Text style={[styles.previewLinkText, { color: colors.softBlue }]}>LinkedIn Profile</Text>
+                  </TouchableOpacity>
+                )}
+                {github && (
+                  <TouchableOpacity style={styles.previewLinkRow}>
+                    <Icon name="link" size={20} color={colors.softBlue} />
+                    <Text style={[styles.previewLinkText, { color: colors.softBlue }]}>GitHub Profile</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+    </ScrollView>
+  );
+}
+
+function SettingsPreferencesContent({ colors, isDarkMode, toggleTheme, currentLanguage, changeLanguage }: any) {
+  const languageOptions = [
+    { code: 'en', label: 'English' },
+    { code: 'am', label: 'አማርኛ' },
+    { code: 'ti', label: 'ትግርኛ' },
+    { code: 'or', label: 'Afaan Oromoo' }
+  ];
+  
+  return (
+    <ScrollView style={styles.settingsContentScroll} showsVerticalScrollIndicator={false}>
+      <View style={styles.settingsContentSection}>
+        <Text style={[styles.settingsContentTitle, { color: colors.deepNavy }]}>Preferences</Text>
+        <Text style={[styles.settingsContentSubtitle, { color: colors.warmGray }]}>
+          Customize your theme and language preferences
         </Text>
         
         <View style={styles.settingsSection}>
+          {/* Dark Mode Toggle */}
           <View style={[styles.modernInputCard, { backgroundColor: colors.white }]}>
             <View style={styles.modernToggleRow}>
               <View style={styles.modernToggleLeft}>
                 <View style={[styles.modernIconCircle, { backgroundColor: colors.cream }]}>
-                  <Icon name={isDarkMode ? 'dark-mode' : 'light-mode'} size={24} color={colors.beeYellow} />
+                  <Icon name={isDarkMode ? 'nightlight-round' : 'wb-sunny'} size={24} color={colors.beeYellow} />
                 </View>
                 <View>
                   <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>
@@ -4211,6 +6529,34 @@ function SettingsAppearanceContent({ colors, isDarkMode, toggleTheme }: any) {
                 ios_backgroundColor={colors.lightGray}
               />
             </View>
+          </View>
+          
+          {/* Language Selection */}
+          <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+            <Text style={[styles.modernInputLabel, { color: colors.deepNavy, marginBottom: 12 }]}>Language</Text>
+            {languageOptions.map((lang) => (
+              <TouchableOpacity
+                key={lang.code}
+                style={[
+                  styles.modernToggleRow,
+                  { paddingVertical: 12 },
+                  currentLanguage === lang.code && { backgroundColor: colors.cream }
+                ]}
+                onPress={() => changeLanguage(lang.code)}
+              >
+                <View style={styles.modernToggleLeft}>
+                  <View style={[styles.modernIconCircle, { backgroundColor: colors.cream }]}>
+                    <Icon name="language" size={24} color={colors.beeYellow} />
+                  </View>
+                  <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>
+                    {lang.label}
+                  </Text>
+                </View>
+                {currentLanguage === lang.code && (
+                  <Icon name="check-circle" size={24} color={colors.beeYellow} />
+                )}
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
       </View>
@@ -4279,9 +6625,9 @@ function SettingsLanguageContent({ userData, user, colors }: any) {
           disabled={saving}
         >
           {saving ? (
-            <ActivityIndicator size="small" color="#1a1a2e" />
+            <ActivityIndicator size="small" color={colors.buttonTextOnYellow} />
           ) : (
-            <Text style={[styles.settingsSaveButtonText, { color: '#1a1a2e' }]}>Save Changes</Text>
+            <Text style={[styles.settingsSaveButtonText, { color: colors.buttonTextOnYellow }]}>Save Changes</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -4723,7 +7069,7 @@ function SettingsProfileScreen({ navigation, route, isDarkMode }: any) {
             <Text style={[styles.settingsInputLabel, { color: colors.deepNavy }]}>Email</Text>
             <TextInput
               style={[styles.settingsTextInput, styles.settingsTextInputDisabled, { backgroundColor: colors.lightGray, color: colors.warmGray }]}
-              value={user?.email}
+              value={user?.email || ''}
               editable={false}
             />
           </View>
@@ -4788,6 +7134,1224 @@ function SettingsAppearanceScreen({ navigation, isDarkMode, toggleTheme }: any) 
         </View>
       </ScrollView>
     </SafeAreaView>
+  );
+}
+
+// Notifications Settings Content
+function SettingsNotificationsContent({ userData, user, colors }: any) {
+  const [emailNotifications, setEmailNotifications] = useState(userData?.emailNotifications ?? true);
+  const [pushNotifications, setPushNotifications] = useState(userData?.pushNotifications ?? true);
+  const [jobAlerts, setJobAlerts] = useState(userData?.jobAlerts ?? true);
+  const [applicationUpdates, setApplicationUpdates] = useState(userData?.applicationUpdates ?? true);
+  const [saving, setSaving] = useState(false);
+
+  const saveNotificationSettings = async () => {
+    if (!user) return;
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        emailNotifications,
+        pushNotifications,
+        jobAlerts,
+        applicationUpdates,
+      });
+      Alert.alert('Success', 'Notification settings saved!');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      Alert.alert('Error', 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 20, marginBottom: 20 }]}>
+        Notification Preferences
+      </Text>
+      
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="email" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Email Notifications</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                Receive updates via email
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={emailNotifications}
+            onValueChange={setEmailNotifications}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="notifications-active" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Push Notifications</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                Get instant alerts
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={pushNotifications}
+            onValueChange={setPushNotifications}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="work-outline" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Job Alerts</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                New jobs matching your interests
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={jobAlerts}
+            onValueChange={setJobAlerts}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 24 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="update" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Application Updates</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                Status changes on your applications
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={applicationUpdates}
+            onValueChange={setApplicationUpdates}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <TouchableOpacity 
+        style={[styles.modernSaveButton, { backgroundColor: colors.beeYellow }]}
+        onPress={saveNotificationSettings}
+        disabled={saving}
+      >
+        {saving ? (
+          <ActivityIndicator size="small" color={colors.deepNavy} />
+        ) : (
+          <>
+            <Icon name="check" size={20} color={colors.deepNavy} />
+            <Text style={[styles.modernSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Privacy Settings Content
+function SettingsPrivacyContent({ userData, user, colors }: any) {
+  const [profileVisibility, setProfileVisibility] = useState(userData?.profileVisibility ?? 'public');
+  const [showEmail, setShowEmail] = useState(userData?.showEmail ?? false);
+  const [allowMessaging, setAllowMessaging] = useState(userData?.allowMessaging ?? true);
+  const [saving, setSaving] = useState(false);
+
+  const savePrivacySettings = async () => {
+    if (!user) return;
+    try {
+      setSaving(true);
+      await updateDoc(doc(db, 'users', user.uid), {
+        profileVisibility,
+        showEmail,
+        allowMessaging,
+      });
+      Alert.alert('Success', 'Privacy settings saved!');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      Alert.alert('Error', 'Failed to save settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 20, marginBottom: 20 }]}>
+        Privacy & Security
+      </Text>
+      
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16 }]}>
+        <Text style={[styles.modernInputLabel, { color: colors.deepNavy, marginBottom: 12 }]}>Profile Visibility</Text>
+        {['public', 'private', 'connections-only'].map((option) => (
+          <TouchableOpacity
+            key={option}
+            style={[
+              styles.modernToggleRow,
+              { paddingVertical: 12 },
+              profileVisibility === option && { backgroundColor: colors.cream }
+            ]}
+            onPress={() => setProfileVisibility(option)}
+          >
+            <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>
+              {option === 'public' ? 'Public' : option === 'private' ? 'Private' : 'Connections Only'}
+            </Text>
+            {profileVisibility === option && (
+              <Icon name="check-circle" size={24} color={colors.beeYellow} />
+            )}
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="email" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Show Email</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                Display email on public profile
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={showEmail}
+            onValueChange={setShowEmail}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 24 }]}>
+        <View style={styles.modernToggleRow}>
+          <View style={styles.modernToggleLeft}>
+            <Icon name="message" size={24} color={colors.beeYellow} />
+            <View style={{ marginLeft: 12 }}>
+              <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>Allow Messaging</Text>
+              <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>
+                Recruiters can send messages
+              </Text>
+            </View>
+          </View>
+          <Switch
+            value={allowMessaging}
+            onValueChange={setAllowMessaging}
+            trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+            thumbColor={colors.white}
+          />
+        </View>
+      </View>
+
+      <TouchableOpacity 
+        style={[styles.modernSaveButton, { backgroundColor: colors.beeYellow }]}
+        onPress={savePrivacySettings}
+        disabled={saving}
+      >
+        {saving ? (
+          <ActivityIndicator size="small" color={colors.deepNavy} />
+        ) : (
+          <>
+            <Icon name="check" size={20} color={colors.deepNavy} />
+            <Text style={[styles.modernSaveButtonText, { color: colors.deepNavy }]}>Save Changes</Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// Help & Support Content
+function SettingsHelpContent({ colors }: any) {
+  const [selectedSection, setSelectedSection] = useState<string>('');
+
+  // Read URL parameter on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const section = params.get('helpSection');
+      if (section) {
+        setSelectedSection(section);
+      }
+    }
+  }, []);
+
+  // Update URL when section changes
+  const handleSectionSelect = (sectionId: string) => {
+    setSelectedSection(sectionId);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('helpSection', sectionId);
+      window.history.pushState({}, '', url.toString());
+    }
+  };
+
+  // Handle back navigation
+  const handleBack = () => {
+    setSelectedSection('');
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.delete('helpSection');
+      window.history.pushState({}, '', url.toString());
+    }
+  };
+
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const section = params.get('helpSection');
+        setSelectedSection(section || '');
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const helpItems = [
+    { id: 'faqs', icon: 'help-outline', title: 'FAQs', subtitle: 'Common questions answered' },
+    { id: 'contact', icon: 'contact-support', title: 'Contact Support', subtitle: 'Get help from our team' },
+    { id: 'feedback', icon: 'feedback', title: 'Send Feedback', subtitle: 'Help us improve' },
+    { id: 'privacy', icon: 'policy', title: 'Privacy Policy', subtitle: 'How we protect your data' },
+    { id: 'terms', icon: 'description', title: 'Terms of Service', subtitle: 'Our usage terms' },
+  ];
+
+  // Render section content
+  const renderSectionContent = () => {
+    switch (selectedSection) {
+      case 'faqs':
+        return <HelpFAQsContent colors={colors} onBack={handleBack} />;
+      case 'contact':
+        return <HelpContactContent colors={colors} onBack={handleBack} />;
+      case 'feedback':
+        return <HelpFeedbackContent colors={colors} onBack={handleBack} />;
+      case 'privacy':
+        return <HelpPrivacyContent colors={colors} onBack={handleBack} />;
+      case 'terms':
+        return <HelpTermsContent colors={colors} onBack={handleBack} />;
+      default:
+        return null;
+    }
+  };
+
+  if (selectedSection) {
+    return renderSectionContent();
+  }
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 20, marginBottom: 20 }]}>
+        Help & Support
+      </Text>
+      
+      {helpItems.map((item, index) => (
+        <TouchableOpacity
+          key={index}
+          style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 12, flexDirection: 'row', alignItems: 'center' }]}
+          onPress={() => handleSectionSelect(item.id)}
+        >
+          <View style={[styles.modernIconCircle, { backgroundColor: colors.cream }]}>
+            <Icon name={item.icon} size={24} color={colors.beeYellow} />
+          </View>
+          <View style={{ flex: 1, marginLeft: 12 }}>
+            <Text style={[styles.modernToggleTitle, { color: colors.deepNavy }]}>{item.title}</Text>
+            <Text style={[styles.modernToggleSubtitle, { color: colors.warmGray }]}>{item.subtitle}</Text>
+          </View>
+          <Icon name="chevron-right" size={24} color={colors.warmGray} />
+        </TouchableOpacity>
+      ))}
+
+      <View style={{ marginTop: 20, padding: 16, backgroundColor: colors.cream, borderRadius: 12 }}>
+        <Text style={{ fontSize: 14, color: colors.deepNavy, textAlign: 'center', marginBottom: 8 }}>
+          Need immediate help?
+        </Text>
+        <Text style={{ fontSize: 12, color: colors.warmGray, textAlign: 'center' }}>
+          Email us at support@nibjobs.com
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Help FAQs Content
+function HelpFAQsContent({ colors, onBack }: any) {
+  const faqs = [
+    {
+      question: 'How do I create an account?',
+      answer: 'Click on the "Sign Up" button in the top right corner and fill in your details. You can also sign up using your Google account for faster registration.'
+    },
+    {
+      question: 'How do I apply for a job?',
+      answer: 'Browse available jobs, click on a job that interests you, and click the "Apply" button. Make sure your profile and CV are up to date before applying.'
+    },
+    {
+      question: 'Can I edit my application after submitting?',
+      answer: 'Once submitted, applications cannot be edited. Please ensure all information is correct before submitting. You can contact the employer directly if you need to update your application.'
+    },
+    {
+      question: 'How do I upload my CV?',
+      answer: 'Go to Settings > Portfolio, and click on "Upload CV". You can upload PDF, DOC, or DOCX files up to 5MB in size.'
+    },
+    {
+      question: 'What subscription plans are available?',
+      answer: 'We offer Free, Standard, and Enterprise plans. Visit the Subscription section in Settings to view detailed features and pricing for each plan.'
+    },
+    {
+      question: 'How do I cancel my subscription?',
+      answer: 'Go to Settings > Subscription and click on "Manage Subscription". You can cancel your subscription at any time, and it will remain active until the end of your billing period.'
+    },
+    {
+      question: 'How do job alerts work?',
+      answer: 'Job alerts notify you when new jobs matching your criteria are posted. Set up your preferences in Settings > Notifications to receive alerts via email or push notifications.'
+    },
+    {
+      question: 'Can I save jobs for later?',
+      answer: 'Yes! Click the bookmark icon on any job listing to save it. Access your saved jobs from the Bookmarks section in the main menu.'
+    },
+    {
+      question: 'How do I change my language preference?',
+      answer: 'Go to Settings > Preferences and select your preferred language. We support English, Amharic, Tigrinya, and Oromiffa.'
+    },
+    {
+      question: 'Is my data secure?',
+      answer: 'Yes, we take data security seriously. All personal information is encrypted and stored securely. Read our Privacy Policy for more details.'
+    }
+  ];
+
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  return (
+    <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity 
+        onPress={onBack}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}
+      >
+        <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        <Text style={{ fontSize: 16, color: colors.deepNavy, marginLeft: 8, fontFamily: fonts.medium }}>
+          Back to Help & Support
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 24, marginBottom: 10 }]}>
+        Frequently Asked Questions
+      </Text>
+      <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 24, fontFamily: fonts.regular }}>
+        Find answers to common questions about NibJobs
+      </Text>
+
+      {faqs.map((faq, index) => (
+        <TouchableOpacity
+          key={index}
+          style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 12, padding: 16 }]}
+          onPress={() => setExpandedIndex(expandedIndex === index ? null : index)}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Text style={{ fontSize: 16, color: colors.deepNavy, flex: 1, fontFamily: fonts.medium }}>
+              {faq.question}
+            </Text>
+            <Icon 
+              name={expandedIndex === index ? "expand-less" : "expand-more"} 
+              size={24} 
+              color={colors.deepNavy} 
+            />
+          </View>
+          {expandedIndex === index && (
+            <Text style={{ 
+              fontSize: 14, 
+              color: colors.warmGray, 
+              marginTop: 12, 
+              lineHeight: 22,
+              fontFamily: fonts.regular 
+            }}>
+              {faq.answer}
+            </Text>
+          )}
+        </TouchableOpacity>
+      ))}
+
+      <View style={{ marginTop: 20, padding: 16, backgroundColor: colors.cream, borderRadius: 12 }}>
+        <Text style={{ fontSize: 14, color: colors.deepNavy, textAlign: 'center', marginBottom: 8, fontFamily: fonts.medium }}>
+          Still have questions?
+        </Text>
+        <Text style={{ fontSize: 12, color: colors.warmGray, textAlign: 'center', fontFamily: fonts.regular }}>
+          Contact our support team at support@nibjobs.com
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// Help Contact Support Content
+function HelpContactContent({ colors, onBack }: any) {
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [phone, setPhone] = useState('');
+  const [subject, setSubject] = useState('');
+  const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!name || !email || !subject || !message) {
+      Alert.alert('Error', 'Please fill in all required fields');
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      Alert.alert('Error', 'Please enter a valid email address');
+      return;
+    }
+
+    setSending(true);
+    try {
+      console.log('🔵 Attempting to save contact support request to Firestore...');
+      console.log('📋 Data:', { name, email, phone, subject, message });
+      console.log('🔧 Database instance:', db);
+      
+      // Save contact support request to Firestore using addDoc
+      const docRef = await addDoc(collection(db, 'contactSupport'), {
+        name,
+        email,
+        phone: phone || null,
+        subject,
+        message,
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      console.log('✅ Contact support request saved successfully! Document ID:', docRef.id);
+      
+      // Show success banner
+      setShowSuccess(true);
+      
+      // Clear form
+      setName('');
+      setEmail('');
+      setPhone('');
+      setSubject('');
+      setMessage('');
+      
+      // Hide banner after 5 seconds
+      setTimeout(() => setShowSuccess(false), 5000);
+    } catch (error) {
+      console.error('❌ Error submitting contact form:', error);
+      console.error('❌ Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        code: (error as any).code,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      Alert.alert('Error', 'Failed to send message. Please try again or contact us directly at support@nibjobs.com');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+      {/* Success Banner */}
+      {showSuccess && (
+        <View style={{
+          backgroundColor: '#10B981',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3
+        }}>
+          <Icon name="check-circle" size={24} color="#FFFFFF" style={{ marginRight: 12 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4, fontFamily: fonts.bold }}>
+              Message Sent Successfully!
+            </Text>
+            <Text style={{ fontSize: 14, color: '#FFFFFF', fontFamily: fonts.regular }}>
+              We'll respond to your email within 24-48 hours.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowSuccess(false)}>
+            <Icon name="close" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* Back Button */}
+      <TouchableOpacity 
+        onPress={onBack}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}
+      >
+        <Icon name="arrow-back" size={20} color={colors.deepNavy} />
+        <Text style={{ fontSize: 14, color: colors.deepNavy, marginLeft: 8, fontFamily: fonts.medium }}>
+          Back to Help & Support
+        </Text>
+      </TouchableOpacity>
+
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        <Icon name="contact-support" size={32} color={colors.beeYellow} style={{ marginRight: 12 }} />
+        <Text style={{ fontSize: 28, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+          Contact Support
+        </Text>
+      </View>
+      <Text style={{ fontSize: 16, color: colors.warmGray, marginBottom: 32, lineHeight: 24, fontFamily: fonts.regular }}>
+        Our support team is here to help. Fill out the form below and we'll get back to you as soon as possible.
+      </Text>
+
+      {/* Contact Form */}
+      <View style={{ backgroundColor: colors.white, borderRadius: 12, padding: 24, marginBottom: 24, borderWidth: 1, borderColor: colors.lightGray }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, marginBottom: 24, fontFamily: fonts.bold }}>
+          Send us a message
+        </Text>
+
+        {/* Name Input */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+            Full Name <Text style={{ color: '#FF6B6B' }}>*</Text>
+          </Text>
+          <TextInput
+            style={{ backgroundColor: colors.lightGray, borderRadius: 8, padding: 14, fontSize: 15, color: colors.deepNavy, fontFamily: fonts.regular }}
+            placeholder="Enter your full name"
+            placeholderTextColor={colors.warmGray}
+            value={name}
+            onChangeText={setName}
+          />
+        </View>
+
+        {/* Email Input */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+            Email Address <Text style={{ color: '#FF6B6B' }}>*</Text>
+          </Text>
+          <TextInput
+            style={{ backgroundColor: colors.lightGray, borderRadius: 8, padding: 14, fontSize: 15, color: colors.deepNavy, fontFamily: fonts.regular }}
+            placeholder="your.email@example.com"
+            placeholderTextColor={colors.warmGray}
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+        </View>
+
+        {/* Phone Input (Optional) */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+            Phone Number <Text style={{ fontSize: 12, color: colors.warmGray, fontWeight: '400' }}>(Optional)</Text>
+          </Text>
+          <TextInput
+            style={{ backgroundColor: colors.lightGray, borderRadius: 8, padding: 14, fontSize: 15, color: colors.deepNavy, fontFamily: fonts.regular }}
+            placeholder="+251 912 345 678"
+            placeholderTextColor={colors.warmGray}
+            value={phone}
+            onChangeText={setPhone}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        {/* Subject Input */}
+        <View style={{ marginBottom: 20 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+            Subject <Text style={{ color: '#FF6B6B' }}>*</Text>
+          </Text>
+          <TextInput
+            style={{ backgroundColor: colors.lightGray, borderRadius: 8, padding: 14, fontSize: 15, color: colors.deepNavy, fontFamily: fonts.regular }}
+            placeholder="What can we help you with?"
+            placeholderTextColor={colors.warmGray}
+            value={subject}
+            onChangeText={setSubject}
+          />
+        </View>
+
+        {/* Message Input */}
+        <View style={{ marginBottom: 24 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+            Message <Text style={{ color: '#FF6B6B' }}>*</Text>
+          </Text>
+          <TextInput
+            style={{ 
+              backgroundColor: colors.lightGray, 
+              borderRadius: 8, 
+              padding: 14, 
+              fontSize: 15, 
+              color: colors.deepNavy, 
+              height: 150, 
+              textAlignVertical: 'top', 
+              fontFamily: fonts.regular 
+            }}
+            placeholder="Please describe your issue or question in detail..."
+            placeholderTextColor={colors.warmGray}
+            value={message}
+            onChangeText={setMessage}
+            multiline
+          />
+        </View>
+
+        {/* Submit Button */}
+        <TouchableOpacity
+          onPress={handleSubmit}
+          disabled={sending}
+          style={{ 
+            backgroundColor: colors.beeYellow, 
+            borderRadius: 8, 
+            padding: 16, 
+            alignItems: 'center', 
+            flexDirection: 'row', 
+            justifyContent: 'center', 
+            gap: 8,
+            opacity: sending ? 0.6 : 1
+          }}
+        >
+          {sending ? (
+            <>
+              <ActivityIndicator color={colors.deepNavy} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+                Sending...
+              </Text>
+            </>
+          ) : (
+            <>
+              <Icon name="send" size={20} color={colors.deepNavy} />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+                Send Message
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      {/* Contact Information */}
+      <View style={{ backgroundColor: colors.cream, borderRadius: 12, padding: 20, marginBottom: 20, borderWidth: 1, borderColor: colors.beeYellow }}>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: colors.deepNavy, marginBottom: 16, fontFamily: fonts.bold }}>
+          Other Ways to Reach Us
+        </Text>
+        
+        <View style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Icon name="email" size={20} color={colors.deepNavy} />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginLeft: 10, fontFamily: fonts.medium }}>
+              Email
+            </Text>
+          </View>
+          <Text style={{ fontSize: 14, color: colors.warmGray, marginLeft: 30, fontFamily: fonts.regular }}>
+            support@nibjobs.com
+          </Text>
+        </View>
+
+        <View style={{ marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Icon name="phone" size={20} color={colors.deepNavy} />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginLeft: 10, fontFamily: fonts.medium }}>
+              Phone
+            </Text>
+          </View>
+          <Text style={{ fontSize: 14, color: colors.warmGray, marginLeft: 30, fontFamily: fonts.regular }}>
+            +251 11 123 4567
+          </Text>
+        </View>
+
+        <View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Icon name="access-time" size={20} color={colors.deepNavy} />
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginLeft: 10, fontFamily: fonts.medium }}>
+              Support Hours
+            </Text>
+          </View>
+          <Text style={{ fontSize: 14, color: colors.warmGray, marginLeft: 30, fontFamily: fonts.regular }}>
+            Monday - Friday, 9:00 AM - 6:00 PM EAT
+          </Text>
+        </View>
+      </View>
+    </ScrollView>
+  );
+}
+
+// Help Feedback Content
+function HelpFeedbackContent({ colors, onBack }: any) {
+  const [category, setCategory] = useState('');
+  const [rating, setRating] = useState(0);
+  const [feedback, setFeedback] = useState('');
+  const [sending, setSending] = useState(false);
+  const [showSuccess, setShowSuccess] = useState(false);
+
+  const categories = ['Feature Request', 'Bug Report', 'User Experience', 'Performance', 'Other'];
+
+  const handleSubmit = async () => {
+    if (!category || !feedback) {
+      Alert.alert('Error', 'Please select a category and provide feedback');
+      return;
+    }
+
+    setSending(true);
+    try {
+      console.log('🔵 Attempting to save feedback to Firestore...');
+      console.log('📋 Data:', { category, rating, feedback });
+      console.log('🔧 Database instance:', db);
+      
+      // Save feedback to Firestore using addDoc
+      const docRef = await addDoc(collection(db, 'feedback'), {
+        category,
+        rating,
+        feedback,
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      });
+      
+      console.log('✅ Feedback saved successfully! Document ID:', docRef.id);
+      
+      // Show success banner
+      setShowSuccess(true);
+      
+      // Clear form
+      setCategory('');
+      setRating(0);
+      setFeedback('');
+      
+      // Hide banner after 5 seconds
+      setTimeout(() => setShowSuccess(false), 5000);
+    } catch (error) {
+      console.error('❌ Error submitting feedback:', error);
+      console.error('❌ Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        code: (error as any).code,
+        stack: error instanceof Error ? error.stack : undefined
+      });
+      Alert.alert('Error', 'Failed to submit feedback. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity 
+        onPress={onBack}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}
+      >
+        <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        <Text style={{ fontSize: 16, color: colors.deepNavy, marginLeft: 8, fontFamily: fonts.medium }}>
+          Back to Help & Support
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 24, marginBottom: 10 }]}>
+        Send Feedback
+      </Text>
+      <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 24, fontFamily: fonts.regular }}>
+        Help us improve NibJobs with your valuable feedback
+      </Text>
+
+      {/* Success Banner */}
+      {showSuccess && (
+        <View style={{
+          backgroundColor: '#10B981',
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 20,
+          flexDirection: 'row',
+          alignItems: 'center',
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 3
+        }}>
+          <Icon name="check-circle" size={24} color="#FFFFFF" style={{ marginRight: 12 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF', marginBottom: 4, fontFamily: fonts.bold }}>
+              Feedback Submitted!
+            </Text>
+            <Text style={{ fontSize: 14, color: '#FFFFFF', fontFamily: fonts.regular }}>
+              Thank you for helping us improve NibJobs.
+            </Text>
+          </View>
+          <TouchableOpacity onPress={() => setShowSuccess(false)}>
+            <Icon name="close" size={20} color="#FFFFFF" />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 16 }]}>
+        <Text style={[styles.modernInputLabel, { color: colors.warmGray, marginBottom: 12 }]}>
+          Feedback Category
+        </Text>
+        {categories.map((cat, index) => (
+          <TouchableOpacity
+            key={index}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              paddingVertical: 10,
+              borderBottomWidth: index < categories.length - 1 ? 1 : 0,
+              borderBottomColor: colors.lightGray
+            }}
+            onPress={() => setCategory(cat)}
+          >
+            <Icon 
+              name={category === cat ? "radio-button-checked" : "radio-button-unchecked"} 
+              size={24} 
+              color={category === cat ? colors.beeYellow : colors.warmGray} 
+            />
+            <Text style={{ 
+              fontSize: 15, 
+              color: category === cat ? colors.deepNavy : colors.warmGray,
+              marginLeft: 12,
+              fontFamily: fonts.regular
+            }}>
+              {cat}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 16 }]}>
+        <Text style={[styles.modernInputLabel, { color: colors.warmGray, marginBottom: 12 }]}>
+          Rate Your Experience (Optional)
+        </Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 12 }}>
+          {[1, 2, 3, 4, 5].map((star) => (
+            <TouchableOpacity key={star} onPress={() => setRating(star)}>
+              <Icon 
+                name={star <= rating ? "star" : "star-border"} 
+                size={36} 
+                color={star <= rating ? colors.beeYellow : colors.warmGray} 
+              />
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 24, padding: 16 }]}>
+        <Text style={[styles.modernInputLabel, { color: colors.warmGray }]}>Your Feedback</Text>
+        <TextInput
+          style={[styles.modernInput, { 
+            color: colors.deepNavy, 
+            borderColor: colors.lightGray,
+            minHeight: 140,
+            textAlignVertical: 'top'
+          }]}
+          placeholder="Tell us what you think..."
+          placeholderTextColor={colors.warmGray}
+          value={feedback}
+          onChangeText={setFeedback}
+          multiline
+          numberOfLines={7}
+        />
+      </View>
+
+      <TouchableOpacity
+        style={{
+          backgroundColor: sending ? colors.lightGray : colors.beeYellow,
+          padding: 16,
+          borderRadius: 12,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
+          opacity: sending ? 0.6 : 1
+        }}
+        onPress={handleSubmit}
+        disabled={sending}
+      >
+        {sending ? (
+          <>
+            <ActivityIndicator color={colors.deepNavy} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Sending...
+            </Text>
+          </>
+        ) : (
+          <>
+            <Icon name="send" size={20} color={colors.deepNavy} />
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Submit Feedback
+            </Text>
+          </>
+        )}
+      </TouchableOpacity>
+    </ScrollView>
+  );
+}
+
+// Help Privacy Policy Content
+function HelpPrivacyContent({ colors, onBack }: any) {
+  return (
+    <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity 
+        onPress={onBack}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}
+      >
+        <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        <Text style={{ fontSize: 16, color: colors.deepNavy, marginLeft: 8, fontFamily: fonts.medium }}>
+          Back to Help & Support
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 24, marginBottom: 10 }]}>
+        Privacy Policy
+      </Text>
+      <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 24, fontFamily: fonts.regular }}>
+        Last updated: November 19, 2025
+      </Text>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          1. Information We Collect
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 16, fontFamily: fonts.regular }}>
+          We collect information that you provide directly to us, including your name, email address, phone number, resume/CV, and professional information when you create an account or apply for jobs.
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          We also automatically collect certain information about your device and how you interact with our services, including IP address, browser type, pages visited, and time spent on our platform.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          2. How We Use Your Information
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 12, fontFamily: fonts.regular }}>
+          We use the information we collect to:
+        </Text>
+        <View style={{ paddingLeft: 16 }}>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Provide, maintain, and improve our services
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Process job applications and connect you with employers
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Send you job alerts and notifications
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Personalize your experience and provide relevant content
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+            • Communicate with you about our services and updates
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          3. Information Sharing
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 16, fontFamily: fonts.regular }}>
+          We share your information with employers when you apply for jobs. Your profile may be visible to employers based on your privacy settings.
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          We do not sell your personal information to third parties. We may share information with service providers who help us operate our platform, subject to confidentiality agreements.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          4. Data Security
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          We implement appropriate technical and organizational measures to protect your personal information against unauthorized access, alteration, disclosure, or destruction. However, no internet transmission is completely secure, and we cannot guarantee absolute security.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          5. Your Rights
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 12, fontFamily: fonts.regular }}>
+          You have the right to:
+        </Text>
+        <View style={{ paddingLeft: 16 }}>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Access and update your personal information
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Delete your account and associated data
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Opt-out of marketing communications
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+            • Request a copy of your data
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 24, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          6. Contact Us
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          If you have questions about this Privacy Policy, please contact us at privacy@nibjobs.com
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
+
+// Help Terms of Service Content
+function HelpTermsContent({ colors, onBack }: any) {
+  return (
+    <ScrollView style={{ padding: 20 }} showsVerticalScrollIndicator={false}>
+      <TouchableOpacity 
+        onPress={onBack}
+        style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}
+      >
+        <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        <Text style={{ fontSize: 16, color: colors.deepNavy, marginLeft: 8, fontFamily: fonts.medium }}>
+          Back to Help & Support
+        </Text>
+      </TouchableOpacity>
+
+      <Text style={[styles.settingsSectionTitle, { color: colors.deepNavy, fontSize: 24, marginBottom: 10 }]}>
+        Terms of Service
+      </Text>
+      <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 24, fontFamily: fonts.regular }}>
+        Last updated: November 19, 2025
+      </Text>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          1. Acceptance of Terms
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          By accessing and using NibJobs, you accept and agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our services.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          2. User Accounts
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 12, fontFamily: fonts.regular }}>
+          You are responsible for:
+        </Text>
+        <View style={{ paddingLeft: 16 }}>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Maintaining the confidentiality of your account credentials
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • All activities that occur under your account
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Providing accurate and truthful information
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+            • Notifying us immediately of any unauthorized use
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          3. Acceptable Use
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 12, fontFamily: fonts.regular }}>
+          You agree not to:
+        </Text>
+        <View style={{ paddingLeft: 16 }}>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Post false, misleading, or fraudulent job applications or information
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Harass, abuse, or harm other users or employers
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Violate any applicable laws or regulations
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 8, fontFamily: fonts.regular }}>
+            • Attempt to gain unauthorized access to our systems
+          </Text>
+          <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+            • Use automated systems to scrape or collect data
+          </Text>
+        </View>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          4. Job Applications
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 16, fontFamily: fonts.regular }}>
+          NibJobs is a platform that connects job seekers with employers. We do not guarantee job placement or employment outcomes.
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          Employers are solely responsible for their job postings and hiring decisions. We do not verify the accuracy of job listings or employer information.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          5. Subscription and Payments
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, marginBottom: 16, fontFamily: fonts.regular }}>
+          Paid subscriptions are billed in advance on a recurring basis. You can cancel your subscription at any time, effective at the end of your current billing period.
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          All fees are non-refundable except as required by law or as explicitly stated in our refund policy.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          6. Intellectual Property
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          All content, features, and functionality of NibJobs are owned by us and are protected by copyright, trademark, and other intellectual property laws. You may not reproduce, distribute, or create derivative works without our permission.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          7. Limitation of Liability
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          NibJobs is provided "as is" without warranties of any kind. We are not liable for any indirect, incidental, special, or consequential damages arising from your use of our services.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 16, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          8. Modifications
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          We reserve the right to modify these terms at any time. Changes will be effective immediately upon posting. Your continued use of NibJobs constitutes acceptance of the modified terms.
+        </Text>
+      </View>
+
+      <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginBottom: 24, padding: 20 }]}>
+        <Text style={{ fontSize: 18, color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.medium }}>
+          9. Contact Information
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+          For questions about these Terms of Service, please contact us at legal@nibjobs.com
+        </Text>
+      </View>
+    </ScrollView>
   );
 }
 
@@ -5143,10 +8707,1915 @@ function SettingsSubscriptionScreen({ navigation, route, isDarkMode }: any) {
   );
 }
 
+// Company Registration Screen
+function CompanyRegistrationScreen({ navigation, route, isDarkMode }: any) {
+  const colors = isDarkMode ? darkColors : lightColors;
+  const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  
+  // Form fields
+  const [companyName, setCompanyName] = useState('');
+  const [companyDescription, setCompanyDescription] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [foundedYear, setFoundedYear] = useState('');
+  const [website, setWebsite] = useState('');
+  const [companyEmail, setCompanyEmail] = useState('');
+  const [companyPhone, setCompanyPhone] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [country, setCountry] = useState('Ethiopia');
+  const [logoUrl, setLogoUrl] = useState('');
+  const [linkedIn, setLinkedIn] = useState('');
+  const [facebook, setFacebook] = useState('');
+  const [twitter, setTwitter] = useState('');
+  
+  // Validation errors
+  const [errors, setErrors] = useState({
+    companyName: '',
+    companyDescription: '',
+    industry: '',
+    companySize: '',
+    companyEmail: '',
+    companyPhone: '',
+    address: '',
+    city: '',
+    logoUrl: ''
+  });
+
+  // Refs for scrolling to error fields
+  const scrollViewRef = useRef<ScrollView>(null);
+  const fieldRefs = useRef({
+    logoUrl: null as View | null,
+    companyName: null as View | null,
+    companyDescription: null as View | null,
+    industry: null as View | null,
+    companySize: null as View | null,
+    companyEmail: null as View | null,
+    companyPhone: null as View | null,
+    address: null as View | null,
+    city: null as View | null,
+  });
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        try {
+          const userDoc = await getDoc(doc(db, 'users', authUser.uid));
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            setUserData(data);
+            
+            // If user already has company data, pre-fill the form
+            if (data.companyProfile) {
+              const cp = data.companyProfile;
+              setCompanyName(cp.companyName || '');
+              setCompanyDescription(cp.description || '');
+              setIndustry(cp.industry || '');
+              setCompanySize(cp.size || '');
+              setFoundedYear(cp.foundedYear || '');
+              setWebsite(cp.website || '');
+              setCompanyEmail(cp.email || '');
+              setCompanyPhone(cp.phone || '');
+              setAddress(cp.address || '');
+              setCity(cp.city || '');
+              setCountry(cp.country || 'Ethiopia');
+              setLogoUrl(cp.logoUrl || '');
+              setLinkedIn(cp.socialMedia?.linkedIn || '');
+              setFacebook(cp.socialMedia?.facebook || '');
+              setTwitter(cp.socialMedia?.twitter || '');
+            }
+          }
+        } catch (error) {
+          console.error('Error fetching user data:', error);
+        }
+      } else {
+        navigation.replace('Login');
+      }
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const pickLogo = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        setUploadingLogo(true);
+        const uri = result.assets[0].uri;
+        const uploadedUrl = await uploadImage(uri, 'companyLogos');
+        setLogoUrl(uploadedUrl);
+        // Clear logo error when successfully uploaded
+        if (errors.logoUrl) {
+          setErrors({ ...errors, logoUrl: '' });
+        }
+      }
+    } catch (error) {
+      console.error('Error picking logo:', error);
+      Alert.alert('Error', 'Failed to select logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const uploadImage = async (uri: string, folder: string) => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const filename = `${folder}/${user.uid}_${Date.now()}.jpg`;
+      const storageRef = ref(storage, filename);
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      return downloadURL;
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      throw error;
+    }
+  };
+
+  const handleSubmit = async () => {
+    console.log('🔵 Submit button clicked');
+    
+    // Reset all errors
+    setErrors({
+      companyName: '',
+      companyDescription: '',
+      industry: '',
+      companySize: '',
+      companyEmail: '',
+      companyPhone: '',
+      address: '',
+      city: '',
+      logoUrl: ''
+    });
+    
+    // Check if user is authenticated
+    if (!user) {
+      console.error('❌ No user found');
+      Alert.alert('Authentication Error', 'You must be logged in to submit. Please log in and try again.');
+      return;
+    }
+
+    console.log('✅ User authenticated:', user.uid);
+
+    // Log all form values for debugging
+    console.log('📋 Form values:', {
+      companyName,
+      companyDescription,
+      industry,
+      companySize,
+      companyEmail,
+      companyPhone,
+      address,
+      city,
+      logoUrl
+    });
+
+    // Collect all validation errors
+    const newErrors: any = {};
+    let hasErrors = false;
+
+    // Detailed validation with specific field messages
+    if (!companyName || companyName.trim() === '') {
+      console.log('❌ Validation failed: Company Name is empty');
+      newErrors.companyName = 'Company Name is required';
+      hasErrors = true;
+    }
+
+    if (!companyDescription || companyDescription.trim() === '') {
+      console.log('❌ Validation failed: Company Description is empty');
+      newErrors.companyDescription = 'Company Description is required';
+      hasErrors = true;
+    }
+
+    if (!industry || industry.trim() === '') {
+      console.log('❌ Validation failed: Industry is empty');
+      newErrors.industry = 'Please select an Industry';
+      hasErrors = true;
+    }
+
+    if (!companySize || companySize.trim() === '') {
+      console.log('❌ Validation failed: Company Size is empty');
+      newErrors.companySize = 'Please select Company Size';
+      hasErrors = true;
+    }
+
+    if (!companyEmail || companyEmail.trim() === '') {
+      console.log('❌ Validation failed: Company Email is empty');
+      newErrors.companyEmail = 'Company Email is required';
+      hasErrors = true;
+    } else {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(companyEmail)) {
+        console.log('❌ Validation failed: Invalid email format');
+        newErrors.companyEmail = 'Please enter a valid email address';
+        hasErrors = true;
+      }
+    }
+
+    if (!companyPhone || companyPhone.trim() === '') {
+      console.log('❌ Validation failed: Company Phone is empty');
+      newErrors.companyPhone = 'Company Phone Number is required';
+      hasErrors = true;
+    }
+
+    if (!address || address.trim() === '') {
+      console.log('❌ Validation failed: Address is empty');
+      newErrors.address = 'Company Address is required';
+      hasErrors = true;
+    }
+
+    if (!city || city.trim() === '') {
+      console.log('❌ Validation failed: City is empty');
+      newErrors.city = 'City is required';
+      hasErrors = true;
+    }
+
+    if (!logoUrl || logoUrl.trim() === '') {
+      console.log('❌ Validation failed: Logo URL is empty');
+      newErrors.logoUrl = 'Please upload a company logo before submitting';
+      hasErrors = true;
+    }
+
+    // If there are any validation errors, update state and return
+    if (hasErrors) {
+      setErrors(newErrors);
+      
+      // Find the first field with an error and scroll to it
+      const errorFields: Array<keyof typeof fieldRefs.current> = ['logoUrl', 'companyName', 'companyDescription', 'industry', 'companySize', 'companyEmail', 'companyPhone', 'address', 'city'];
+      const firstErrorField = errorFields.find(field => newErrors[field]);
+      
+      if (firstErrorField && fieldRefs.current[firstErrorField]) {
+        // Small delay to ensure error state is updated before measuring
+        setTimeout(() => {
+          fieldRefs.current[firstErrorField]?.measureLayout(
+            scrollViewRef.current as any,
+            (_x: number, y: number) => {
+              scrollViewRef.current?.scrollTo({ y: y - 100, animated: true });
+            },
+            () => {
+              // Fallback if measureLayout fails
+              console.log('Failed to measure field position');
+            }
+          );
+        }, 100);
+      }
+      
+      // Show a summary alert
+      Alert.alert('Validation Error', 'Please fill in all required fields marked in red.');
+      return;
+    }
+
+    console.log('✅ All validations passed');
+
+    try {
+      setSaving(true);
+      console.log('🔄 Starting submission to Firestore...');
+      
+      const companyProfile = {
+        companyName,
+        description: companyDescription,
+        industry,
+        size: companySize,
+        foundedYear,
+        website,
+        email: companyEmail,
+        phone: companyPhone,
+        address,
+        city,
+        country,
+        logoUrl,
+        socialMedia: {
+          linkedIn,
+          facebook,
+          twitter
+        },
+        verificationStatus: 'pending', // pending, approved, rejected
+        submittedAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      console.log('📦 Company profile data:', companyProfile);
+
+      // Update user document
+      const userRef = doc(db, 'users', user.uid);
+      console.log('📝 Updating user document:', user.uid);
+      
+      await updateDoc(userRef, {
+        role: 'company',
+        companyProfile,
+        updatedAt: new Date()
+      });
+
+      console.log('✅ User document updated successfully');
+
+      // Send verification email notification
+      try {
+        console.log('📧 Sending verification email...');
+        const notifyCompanyVerification = httpsCallable(functions, 'notifyCompanyVerification');
+        await notifyCompanyVerification({
+          userEmail: user.email,
+          userName: userData?.displayName || userData?.name || 'User',
+          companyName: companyName
+        });
+        console.log('✅ Verification email sent');
+      } catch (emailError) {
+        console.error('⚠️ Failed to send verification email:', emailError);
+        // Don't fail the submission if email fails
+      }
+
+      console.log('✅ Submission completed successfully');
+
+      Alert.alert(
+        'Success!', 
+        'Your company profile has been submitted for verification. We\'re reviewing it and will notify you via email shortly.',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.replace('Jobs')
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('❌ Error submitting company profile:', error);
+      console.error('Error details:', {
+        message: error.message,
+        code: error.code,
+        stack: error.stack
+      });
+      Alert.alert('Error', `Failed to submit company profile: ${error.message || 'Unknown error'}. Please try again.`);
+    } finally {
+      setSaving(false);
+      console.log('🔵 Submit process finished');
+    }
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  // If user is already a company, show message
+  if (userData?.role === 'company') {
+    const verificationStatus = userData?.companyProfile?.verificationStatus || 'pending';
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+        <View style={{ padding: 40, alignItems: 'center' }}>
+          <Icon 
+            name={verificationStatus === 'approved' ? 'verified' : verificationStatus === 'rejected' ? 'cancel' : 'pending'} 
+            size={80} 
+            color={verificationStatus === 'approved' ? colors.success : verificationStatus === 'rejected' ? colors.danger : colors.beeYellow} 
+          />
+          <Text style={{ fontSize: 24, fontWeight: '700', color: colors.deepNavy, marginTop: 20, fontFamily: fonts.bold }}>
+            {verificationStatus === 'approved' ? 'Company Verified!' : verificationStatus === 'rejected' ? 'Verification Rejected' : 'Pending Verification'}
+          </Text>
+          <Text style={{ fontSize: 16, color: colors.warmGray, marginTop: 12, textAlign: 'center', fontFamily: fonts.regular }}>
+            {verificationStatus === 'approved' 
+              ? 'Your company profile has been verified. You can now post jobs and manage your company.' 
+              : verificationStatus === 'rejected'
+              ? 'Your company profile was rejected. Please contact support for more information.'
+              : 'Your company profile is under review. We\'ll notify you once it\'s verified.'}
+          </Text>
+          <TouchableOpacity 
+            style={[styles.modernButton, { backgroundColor: colors.beeYellow, marginTop: 32 }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={[styles.modernButtonText, { color: colors.deepNavy }]}>Go Back</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const industries = [
+    'Technology', 'Finance', 'Healthcare', 'Education', 'Retail', 'Manufacturing',
+    'Construction', 'Agriculture', 'Transportation', 'Hospitality', 'Real Estate',
+    'Media & Entertainment', 'Consulting', 'Non-Profit', 'Other'
+  ];
+
+  const companySizes = [
+    '1-10 employees',
+    '11-50 employees',
+    '51-200 employees',
+    '201-500 employees',
+    '501-1000 employees',
+    '1000+ employees'
+  ];
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.cream }]}>
+      <View style={[styles.settingsHeader, { backgroundColor: colors.white, borderBottomColor: colors.lightGray }]}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Icon name="arrow-back" size={24} color={colors.deepNavy} />
+        </TouchableOpacity>
+        <Text style={[styles.settingsHeaderTitle, { color: colors.deepNavy }]}>Be a Company</Text>
+        <View style={{ width: 24 }} />
+      </View>
+
+      <ScrollView 
+        ref={scrollViewRef}
+        style={{ flex: 1 }} 
+        contentContainerStyle={{ padding: 24 }} 
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header Section */}
+        <View style={{ marginBottom: 32 }}>
+          <Text style={{ fontSize: 32, fontWeight: '700', color: colors.deepNavy, marginBottom: 12, fontFamily: fonts.bold }}>
+            Register Your Company
+          </Text>
+          <Text style={{ fontSize: 16, color: colors.warmGray, lineHeight: 24, fontFamily: fonts.regular }}>
+            Join thousands of companies finding top talent on NibJobs. Complete the form below to get started.
+          </Text>
+        </View>
+
+        {/* Company Logo Section */}
+        <View 
+          ref={(ref) => fieldRefs.current.logoUrl = ref}
+          style={{
+          backgroundColor: colors.white,
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 24,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 3
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <View style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.beeYellow + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12
+            }}>
+              <Icon name="business" size={22} color={colors.beeYellow} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Company Logo *
+            </Text>
+          </View>
+
+          {logoUrl ? (
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <Image 
+                source={{ uri: logoUrl }} 
+                style={{
+                  width: 160,
+                  height: 160,
+                  borderRadius: 80,
+                  marginBottom: 16,
+                  borderWidth: 4,
+                  borderColor: colors.beeYellow + '30'
+                }} 
+              />
+              <TouchableOpacity 
+                onPress={pickLogo}
+                style={{
+                  paddingHorizontal: 24,
+                  paddingVertical: 12,
+                  borderRadius: 10,
+                  borderWidth: 2,
+                  borderColor: colors.beeYellow
+                }}
+                disabled={uploadingLogo}
+              >
+                {uploadingLogo ? (
+                  <ActivityIndicator size="small" color={colors.beeYellow} />
+                ) : (
+                  <Text style={{ color: colors.beeYellow, fontFamily: fonts.medium, fontSize: 15 }}>
+                    Change Logo
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: colors.cream,
+                  borderWidth: 2,
+                  borderStyle: 'dashed',
+                  borderColor: errors.logoUrl ? '#EF4444' : colors.beeYellow,
+                  borderRadius: 16,
+                  padding: 40,
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+                onPress={pickLogo}
+                disabled={uploadingLogo}
+              >
+                {uploadingLogo ? (
+                  <ActivityIndicator color={colors.beeYellow} size="large" />
+                ) : (
+                  <>
+                    <View style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: colors.beeYellow + '20',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 16
+                    }}>
+                      <Icon name="add-photo-alternate" size={32} color={colors.beeYellow} />
+                    </View>
+                    <Text style={{ color: colors.deepNavy, fontFamily: fonts.medium, fontSize: 16, marginBottom: 8 }}>
+                      Upload Company Logo
+                    </Text>
+                    <Text style={{ color: colors.warmGray, fontFamily: fonts.regular, fontSize: 14 }}>
+                      PNG or JPG, up to 5MB
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+              {errors.logoUrl ? (
+                <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 8, fontFamily: fonts.regular }}>
+                  {errors.logoUrl}
+                </Text>
+              ) : null}
+            </>
+          )}
+        </View>
+
+        {/* Company Information Section */}
+        <View style={{
+          backgroundColor: colors.white,
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 24,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 3
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+            <View style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.beeYellow + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12
+            }}>
+              <Icon name="info" size={22} color={colors.beeYellow} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Company Information
+            </Text>
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.companyName = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Company Name *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: errors.companyName ? '#EF4444' : colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={companyName}
+              onChangeText={(text) => {
+                setCompanyName(text);
+                if (errors.companyName) {
+                  setErrors({ ...errors, companyName: '' });
+                }
+              }}
+              placeholder="e.g., Acme Corporation"
+              placeholderTextColor={colors.warmGray}
+            />
+            {errors.companyName ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.companyName}
+              </Text>
+            ) : null}
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.companyDescription = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Company Description *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: errors.companyDescription ? '#EF4444' : colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular,
+                minHeight: 120,
+                textAlignVertical: 'top'
+              }}
+              value={companyDescription}
+              onChangeText={(text) => {
+                setCompanyDescription(text);
+                if (errors.companyDescription) {
+                  setErrors({ ...errors, companyDescription: '' });
+                }
+              }}
+              placeholder="Tell us about your company, mission, and values..."
+              placeholderTextColor={colors.warmGray}
+              multiline
+              numberOfLines={5}
+            />
+            {errors.companyDescription ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.companyDescription}
+              </Text>
+            ) : null}
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.industry = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Industry *
+            </Text>
+            <View style={{
+              backgroundColor: colors.cream,
+              borderWidth: 1,
+              borderColor: errors.industry ? '#EF4444' : colors.lightGray,
+              borderRadius: 12,
+              overflow: 'hidden'
+            }}>
+              <select
+                value={industry}
+                onChange={(e) => {
+                  setIndustry(e.target.value);
+                  if (errors.industry) {
+                    setErrors({ ...errors, industry: '' });
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: 16,
+                  fontSize: 16,
+                  border: 'none',
+                  outline: 'none',
+                  backgroundColor: colors.cream,
+                  color: colors.deepNavy,
+                  fontFamily: fonts.regular,
+                  cursor: 'pointer'
+                } as any}
+              >
+                <option value="" style={{ backgroundColor: colors.cream, color: colors.deepNavy }}>Select an industry</option>
+                {industries.map((ind) => (
+                  <option key={ind} value={ind} style={{ backgroundColor: colors.cream, color: colors.deepNavy }}>{ind}</option>
+                ))}
+              </select>
+            </View>
+            {errors.industry ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.industry}
+              </Text>
+            ) : null}
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.companySize = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Company Size *
+            </Text>
+            <View style={{
+              backgroundColor: colors.cream,
+              borderWidth: 1,
+              borderColor: errors.companySize ? '#EF4444' : colors.lightGray,
+              borderRadius: 12,
+              overflow: 'hidden'
+            }}>
+              <select
+                value={companySize}
+                onChange={(e) => {
+                  setCompanySize(e.target.value);
+                  if (errors.companySize) {
+                    setErrors({ ...errors, companySize: '' });
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  padding: 16,
+                  fontSize: 16,
+                  border: 'none',
+                  outline: 'none',
+                  backgroundColor: colors.cream,
+                  color: colors.deepNavy,
+                  fontFamily: fonts.regular,
+                  cursor: 'pointer'
+                } as any}
+              >
+                <option value="" style={{ backgroundColor: colors.cream, color: colors.deepNavy }}>Select company size</option>
+                {companySizes.map((size) => (
+                  <option key={size} value={size} style={{ backgroundColor: colors.cream, color: colors.deepNavy }}>{size}</option>
+                ))}
+              </select>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 20 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+                Founded Year
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.cream,
+                  borderWidth: 1,
+                  borderColor: colors.lightGray,
+                  borderRadius: 12,
+                  padding: 16,
+                  fontSize: 16,
+                  color: colors.deepNavy,
+                  fontFamily: fonts.regular
+                }}
+                value={foundedYear}
+                onChangeText={setFoundedYear}
+                placeholder="2020"
+                placeholderTextColor={colors.warmGray}
+                keyboardType="numeric"
+              />
+            </View>
+          </View>
+
+          <View style={{ marginBottom: 0 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Website
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={website}
+              onChangeText={setWebsite}
+              placeholder="https://www.yourcompany.com"
+              placeholderTextColor={colors.warmGray}
+              keyboardType="url"
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
+
+        {/* Contact Information Section */}
+        <View style={{
+          backgroundColor: colors.white,
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 24,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 3
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 24 }}>
+            <View style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.beeYellow + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12
+            }}>
+              <Icon name="contact-mail" size={22} color={colors.beeYellow} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Contact Information
+            </Text>
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.companyEmail = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Company Email *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: errors.companyEmail ? '#EF4444' : colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={companyEmail}
+              onChangeText={(text) => {
+                setCompanyEmail(text);
+                if (errors.companyEmail) {
+                  setErrors({ ...errors, companyEmail: '' });
+                }
+              }}
+              placeholder="contact@yourcompany.com"
+              placeholderTextColor={colors.warmGray}
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            {errors.companyEmail ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.companyEmail}
+              </Text>
+            ) : null}
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.companyPhone = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Phone Number *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: errors.companyPhone ? '#EF4444' : colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={companyPhone}
+              onChangeText={(text) => {
+                setCompanyPhone(text);
+                if (errors.companyPhone) {
+                  setErrors({ ...errors, companyPhone: '' });
+                }
+              }}
+              placeholder="+251 9XX XXX XXX"
+              placeholderTextColor={colors.warmGray}
+              keyboardType="phone-pad"
+            />
+            {errors.companyPhone ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.companyPhone}
+              </Text>
+            ) : null}
+          </View>
+
+          <View 
+            ref={(ref) => fieldRefs.current.address = ref}
+            style={{ marginBottom: 20 }}
+          >
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Address *
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: errors.address ? '#EF4444' : colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={address}
+              onChangeText={(text) => {
+                setAddress(text);
+                if (errors.address) {
+                  setErrors({ ...errors, address: '' });
+                }
+              }}
+              placeholder="Street address"
+              placeholderTextColor={colors.warmGray}
+            />
+            {errors.address ? (
+              <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                {errors.address}
+              </Text>
+            ) : null}
+          </View>
+
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 0 }}>
+            <View 
+              ref={(ref) => fieldRefs.current.city = ref}
+              style={{ flex: 1 }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+                City *
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.cream,
+                  borderWidth: 1,
+                  borderColor: errors.city ? '#EF4444' : colors.lightGray,
+                  borderRadius: 12,
+                  padding: 16,
+                  fontSize: 16,
+                  color: colors.deepNavy,
+                  fontFamily: fonts.regular
+                }}
+                value={city}
+                onChangeText={(text) => {
+                  setCity(text);
+                  if (errors.city) {
+                    setErrors({ ...errors, city: '' });
+                  }
+                }}
+                placeholder="Addis Ababa"
+                placeholderTextColor={colors.warmGray}
+              />
+              {errors.city ? (
+                <Text style={{ color: '#EF4444', fontSize: 13, marginTop: 6, fontFamily: fonts.regular }}>
+                  {errors.city}
+                </Text>
+              ) : null}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+                Country
+              </Text>
+              <TextInput
+                style={{
+                  backgroundColor: colors.cream,
+                  borderWidth: 1,
+                  borderColor: colors.lightGray,
+                  borderRadius: 12,
+                  padding: 16,
+                  fontSize: 16,
+                  color: colors.deepNavy,
+                  fontFamily: fonts.regular
+                }}
+                value={country}
+                onChangeText={setCountry}
+                placeholder="Ethiopia"
+                placeholderTextColor={colors.warmGray}
+              />
+            </View>
+          </View>
+        </View>
+
+        {/* Social Media Section */}
+        <View style={{
+          backgroundColor: colors.white,
+          borderRadius: 16,
+          padding: 24,
+          marginBottom: 32,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.05,
+          shadowRadius: 12,
+          elevation: 3
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+            <View style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.beeYellow + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginRight: 12
+            }}>
+              <Icon name="share" size={22} color={colors.beeYellow} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, fontFamily: fonts.bold }}>
+              Social Media
+            </Text>
+          </View>
+
+          <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 20, fontFamily: fonts.regular }}>
+            Optional - Help candidates learn more about your company
+          </Text>
+
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              LinkedIn
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={linkedIn}
+              onChangeText={setLinkedIn}
+              placeholder="https://linkedin.com/company/yourcompany"
+              placeholderTextColor={colors.warmGray}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={{ marginBottom: 20 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Facebook
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={facebook}
+              onChangeText={setFacebook}
+              placeholder="https://facebook.com/yourcompany"
+              placeholderTextColor={colors.warmGray}
+              autoCapitalize="none"
+            />
+          </View>
+
+          <View style={{ marginBottom: 0 }}>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.medium }}>
+              Twitter
+            </Text>
+            <TextInput
+              style={{
+                backgroundColor: colors.cream,
+                borderWidth: 1,
+                borderColor: colors.lightGray,
+                borderRadius: 12,
+                padding: 16,
+                fontSize: 16,
+                color: colors.deepNavy,
+                fontFamily: fonts.regular
+              }}
+              value={twitter}
+              onChangeText={setTwitter}
+              placeholder="https://twitter.com/yourcompany"
+              placeholderTextColor={colors.warmGray}
+              autoCapitalize="none"
+            />
+          </View>
+        </View>
+
+        {/* Submit Button */}
+        <TouchableOpacity
+          style={{
+            backgroundColor: colors.beeYellow,
+            paddingVertical: 18,
+            borderRadius: 14,
+            alignItems: 'center',
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: 0.2,
+            shadowRadius: 16,
+            elevation: 5,
+            marginBottom: 40
+          }}
+          onPress={handleSubmit}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator color={colors.deepNavy} />
+          ) : (
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Icon name="send" size={22} color={colors.deepNavy} />
+              <Text style={{
+                color: colors.deepNavy,
+                fontSize: 18,
+                fontFamily: fonts.bold,
+                marginLeft: 10
+              }}>
+                Submit for Verification
+              </Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+// Company Dashboard Screen
+function CompanyDashboardScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
+  const colors = isDarkMode ? darkColors : lightColors;
+  const [activeTab, setActiveTab] = useState('statistics');
+  const [user, setUser] = useState<any>(null);
+  const [userData, setUserData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // URL query-based routing for maintaining state on refresh
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const tabFromURL = urlParams.get('tab');
+      if (tabFromURL && ['statistics', 'posted-jobs', 'bookmarked-candidates', 'messages', 'profile'].includes(tabFromURL)) {
+        setActiveTab(tabFromURL);
+      }
+    }
+  }, []);
+
+  // Update URL when tab changes
+  const handleTabChange = (tabId: string) => {
+    setActiveTab(tabId);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tabId);
+      window.history.replaceState({}, '', url.toString());
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (authUser) => {
+      if (authUser) {
+        setUser(authUser);
+        const userRef = doc(db, 'users', authUser.uid);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          const data = userSnap.data();
+          setUserData(data);
+          // Redirect if not a company
+          if (data.role !== 'company') {
+            Alert.alert('Access Denied', 'You need to register as a company to access this page.');
+            navigation.replace('Home');
+          }
+        }
+      } else {
+        navigation.replace('Home');
+      }
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({}, document.title, '/');
+    }
+    navigation.replace('Home');
+  };
+
+  const sidebarItems = [
+    { id: 'statistics', title: 'Statistics', icon: 'analytics' },
+    { id: 'posted-jobs', title: 'Posted Jobs', icon: 'work' },
+    { id: 'bookmarked-candidates', title: 'Bookmarked Candidates', icon: 'bookmark' },
+    { id: 'messages', title: 'Messages', icon: 'chat' },
+    { id: 'profile', title: 'Company Profile', icon: 'business' },
+  ];
+
+  if (loading) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
+        <View style={[styles.loadingContainer, { backgroundColor: colors.white }]}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading dashboard...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
+      <View style={styles.adminContainer}>
+        {/* Sidebar */}
+        <View style={[
+          styles.sidebar, 
+          { backgroundColor: colors.sidebarBg, borderRightColor: colors.sidebarBorder },
+          isSidebarCollapsed && styles.sidebarCollapsed
+        ]}>
+          <View style={[styles.sidebarHeader, { borderBottomColor: colors.sidebarBorder }]}>
+            {!isSidebarCollapsed && (
+              <View style={styles.userContainer}>
+                <View style={styles.userAvatar}>
+                  {userData?.companyProfile?.logoUrl ? (
+                    <Image 
+                      source={{ uri: userData.companyProfile.logoUrl }} 
+                      style={{ width: 48, height: 48, borderRadius: 24 }} 
+                    />
+                  ) : (
+                    <Icon name="business" size={24} color={colors.sidebarAccent} />
+                  )}
+                </View>
+                <View style={{ flex: 1, marginLeft: 16 }}>
+                  <Text style={[styles.sidebarUser, { color: colors.sidebarText }]}>
+                    {userData?.companyProfile?.companyName || 'Company'}
+                  </Text>
+                  <Text style={[styles.sidebarUserRole, { color: colors.warmGray }]}>
+                    Company Account
+                  </Text>
+                  {userData?.companyProfile?.verificationStatus && (
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      marginTop: 4,
+                      paddingHorizontal: 8,
+                      paddingVertical: 3,
+                      borderRadius: 12,
+                      alignSelf: 'flex-start',
+                      backgroundColor: userData.companyProfile.verificationStatus === 'approved'
+                        ? '#10B981'
+                        : userData.companyProfile.verificationStatus === 'rejected'
+                        ? '#EF4444'
+                        : '#F59E0B',
+                    }}>
+                      <Icon 
+                        name={
+                          userData.companyProfile.verificationStatus === 'approved'
+                            ? 'verified'
+                            : userData.companyProfile.verificationStatus === 'rejected'
+                            ? 'cancel'
+                            : 'pending'
+                        } 
+                        size={12} 
+                        color="#FFFFFF" 
+                      />
+                      <Text style={{
+                        fontSize: 11,
+                        fontWeight: '600',
+                        color: '#FFFFFF',
+                        marginLeft: 4,
+                        fontFamily: fonts.medium,
+                      }}>
+                        {userData.companyProfile.verificationStatus === 'approved'
+                          ? 'Verified'
+                          : userData.companyProfile.verificationStatus === 'rejected'
+                          ? 'Rejected'
+                          : 'Pending Verification'}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+            {/* Collapse Toggle Button */}
+            <TouchableOpacity
+              onPress={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              style={[
+                styles.collapseButton,
+                { backgroundColor: colors.sidebarAccentLight }
+              ]}
+            >
+              <Icon 
+                name={isSidebarCollapsed ? "chevron-right" : "chevron-left"} 
+                size={20} 
+                color={colors.sidebarAccent} 
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Sidebar Navigation */}
+          {sidebarItems.map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              style={[
+                styles.sidebarItem,
+                activeTab === item.id && { ...styles.sidebarItemActive, backgroundColor: colors.sidebarAccentLight },
+                isSidebarCollapsed && styles.sidebarItemCollapsed
+              ]}
+              onPress={() => handleTabChange(item.id)}
+            >
+              <View style={[
+                styles.iconContainer,
+                activeTab === item.id && styles.iconContainerActive
+              ]}>
+                <Icon 
+                  name={item.icon} 
+                  size={18} 
+                  color={activeTab === item.id ? colors.sidebarAccent : colors.sidebarText} 
+                />
+              </View>
+              {!isSidebarCollapsed && (
+                <Text style={[
+                  styles.sidebarText,
+                  { color: colors.sidebarText },
+                  activeTab === item.id && { ...styles.sidebarTextActive, color: colors.sidebarTextActive }
+                ]}>
+                  {item.title}
+                </Text>
+              )}
+              {activeTab === item.id && <View style={styles.activeIndicator} />}
+            </TouchableOpacity>
+          ))}
+
+          {/* Theme Switcher in Sidebar */}
+          <TouchableOpacity
+            onPress={toggleTheme}
+            style={[
+              styles.sidebarItem,
+              { 
+                marginTop: 'auto',
+                borderTopWidth: 1,
+                borderTopColor: colors.sidebarBorder,
+                paddingTop: 16
+              },
+              isSidebarCollapsed && styles.sidebarItemCollapsed
+            ]}
+          >
+            <View style={styles.iconContainer}>
+              <Icon 
+                name={isDarkMode ? 'wb-sunny' : 'nights-stay'} 
+                size={18} 
+                color={isDarkMode ? '#FCD34D' : colors.sidebarText} 
+              />
+            </View>
+            {!isSidebarCollapsed && (
+              <Text style={[styles.sidebarText, { color: colors.sidebarText }]}>
+                {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          {/* To Candidate View Button - Highlighted and distinct */}
+          <TouchableOpacity
+            style={[
+              styles.sidebarItem,
+              { 
+                backgroundColor: colors.sidebarAccentLight,
+                borderTopWidth: 1,
+                borderBottomWidth: 1,
+                borderTopColor: colors.sidebarBorder,
+                borderBottomColor: colors.sidebarBorder,
+                borderLeftWidth: 3,
+                borderLeftColor: colors.sidebarAccent,
+                paddingVertical: 14
+              },
+              isSidebarCollapsed && styles.sidebarItemCollapsed
+            ]}
+            onPress={() => navigation.navigate('Jobs')}
+          >
+            <View style={[styles.iconContainer, styles.iconContainerActive]}>
+              <Icon name="work" size={18} color={colors.sidebarAccent} />
+            </View>
+            {!isSidebarCollapsed && (
+              <Text style={[styles.sidebarText, styles.sidebarTextActive, { color: colors.sidebarTextActive, fontWeight: '600' }]}>
+                To Candidate View
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[
+              styles.logoutButton,
+              isSidebarCollapsed && styles.logoutButtonCollapsed
+            ]} 
+            onPress={handleLogout}
+          >
+            <View style={styles.logoutIconContainer}>
+              <Icon name="logout" size={18} color={colors.danger} />
+            </View>
+            {!isSidebarCollapsed && (
+              <Text style={styles.logoutText}>Sign Out</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {/* Main Content */}
+        <View style={[styles.adminMainContent, { backgroundColor: colors.lightGray }]}>
+          {activeTab === 'statistics' && <CompanyStatisticsContent colors={colors} companyData={userData?.companyProfile} />}
+          {activeTab === 'posted-jobs' && <CompanyPostedJobsContent colors={colors} companyId={user?.uid} />}
+          {activeTab === 'bookmarked-candidates' && <CompanyBookmarkedCandidatesContent colors={colors} companyId={user?.uid} />}
+          {activeTab === 'messages' && <CompanyMessagesContent colors={colors} companyId={user?.uid} />}
+          {activeTab === 'profile' && <CompanyProfileContent colors={colors} userData={userData} user={user} />}
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+// Company Statistics Content
+function CompanyStatisticsContent({ colors, companyData }: any) {
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="analytics" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Company Statistics</Text>
+      </View>
+      <View style={{ padding: 20 }}>
+        <Text style={{ fontSize: 18, fontFamily: fonts.regular, color: colors.deepNavy, marginBottom: 20 }}>
+          Welcome, {companyData?.companyName}!
+        </Text>
+        <View style={styles.statsGrid}>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
+            <Icon name="work" size={32} color={colors.beeYellow} />
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>0</Text>
+            <Text style={[styles.statLabel, { color: colors.warmGray }]}>Posted Jobs</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
+            <Icon name="people" size={32} color={colors.beeYellow} />
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>0</Text>
+            <Text style={[styles.statLabel, { color: colors.warmGray }]}>Total Applicants</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
+            <Icon name="bookmark" size={32} color={colors.beeYellow} />
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>0</Text>
+            <Text style={[styles.statLabel, { color: colors.warmGray }]}>Bookmarked Candidates</Text>
+          </View>
+          <View style={[styles.statCard, { backgroundColor: colors.white }]}>
+            <Icon name="chat" size={32} color={colors.beeYellow} />
+            <Text style={[styles.statValue, { color: colors.deepNavy }]}>0</Text>
+            <Text style={[styles.statLabel, { color: colors.warmGray }]}>Unread Messages</Text>
+          </View>
+        </View>
+      </View>
+    </View>
+  );
+}
+
+// Company Posted Jobs Content
+function CompanyPostedJobsContent({ colors, companyId }: any) {
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="work" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Posted Jobs</Text>
+      </View>
+      <View style={{ padding: 20 }}>
+        <Text style={{ fontSize: 16, fontFamily: fonts.regular, color: colors.warmGray, textAlign: 'center', marginTop: 100 }}>
+          No jobs posted yet. Create your first job posting to attract talented candidates!
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Company Bookmarked Candidates Content
+function CompanyBookmarkedCandidatesContent({ colors, companyId }: any) {
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="bookmark" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Bookmarked Candidates</Text>
+      </View>
+      <View style={{ padding: 20 }}>
+        <Text style={{ fontSize: 16, fontFamily: fonts.regular, color: colors.warmGray, textAlign: 'center', marginTop: 100 }}>
+          No bookmarked candidates yet. Bookmark promising candidates to review them later!
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Company Messages Content
+function CompanyMessagesContent({ colors, companyId }: any) {
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="chat" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Messages</Text>
+      </View>
+      <View style={{ padding: 20 }}>
+        <Text style={{ fontSize: 16, fontFamily: fonts.regular, color: colors.warmGray, textAlign: 'center', marginTop: 100 }}>
+          No messages yet. Start conversations with candidates!
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// Company Profile Content
+function CompanyProfileContent({ colors, userData, user }: any) {
+  const [editing, setEditing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  
+  const companyProfile = userData?.companyProfile || {};
+  const verificationStatus = companyProfile.verificationStatus || 'pending';
+  
+  const [companyName, setCompanyName] = useState(companyProfile.companyName || '');
+  const [companyDescription, setCompanyDescription] = useState(companyProfile.companyDescription || '');
+  const [industry, setIndustry] = useState(companyProfile.industry || '');
+  const [companySize, setCompanySize] = useState(companyProfile.companySize || '');
+  const [foundedYear, setFoundedYear] = useState(companyProfile.foundedYear || '');
+  const [website, setWebsite] = useState(companyProfile.website || '');
+  const [companyEmail, setCompanyEmail] = useState(companyProfile.companyEmail || '');
+  const [companyPhone, setCompanyPhone] = useState(companyProfile.companyPhone || '');
+  const [address, setAddress] = useState(companyProfile.address || '');
+  const [city, setCity] = useState(companyProfile.city || '');
+  const [country, setCountry] = useState(companyProfile.country || 'Ethiopia');
+  const [logoUrl, setLogoUrl] = useState(companyProfile.logoUrl || '');
+  const [linkedIn, setLinkedIn] = useState(companyProfile.linkedIn || '');
+  const [facebook, setFacebook] = useState(companyProfile.facebook || '');
+  const [twitter, setTwitter] = useState(companyProfile.twitter || '');
+
+  const pickLogo = async () => {
+    try {
+      setUploadingLogo(true);
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const uploadedUrl = await uploadImage(result.assets[0].uri, 'company-logos');
+        if (uploadedUrl) {
+          setLogoUrl(uploadedUrl);
+        }
+      }
+    } catch (error) {
+      Alert.alert('Error', 'Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const uploadImage = async (uri: string, folder: string) => {
+    try {
+      const response = await fetch(uri);
+      const blob = await response.blob();
+      const filename = `${folder}/${user.uid}-${Date.now()}.jpg`;
+      const storageRef = ref(storage, filename);
+      await uploadBytes(storageRef, blob);
+      return await getDownloadURL(storageRef);
+    } catch (error) {
+      console.error('Upload error:', error);
+      return null;
+    }
+  };
+
+  const handleSave = async () => {
+    if (!user) return;
+
+    try {
+      setSaving(true);
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        companyProfile: {
+          ...companyProfile,
+          companyName,
+          companyDescription,
+          industry,
+          companySize,
+          foundedYear,
+          website,
+          companyEmail,
+          companyPhone,
+          address,
+          city,
+          country,
+          logoUrl,
+          linkedIn,
+          facebook,
+          twitter,
+          updatedAt: new Date(),
+        },
+        updatedAt: new Date(),
+      });
+      Alert.alert('Success', 'Company profile updated successfully!');
+      setEditing(false);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update company profile');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="business" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Company Profile</Text>
+        <TouchableOpacity
+          style={[styles.modernSaveButton, { backgroundColor: editing ? colors.beeYellow : colors.deepNavy, marginLeft: 'auto' }]}
+          onPress={() => editing ? handleSave() : setEditing(true)}
+          disabled={saving}
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color={colors.white} />
+          ) : (
+            <>
+              <Icon name={editing ? 'save' : 'edit'} size={16} color={editing ? colors.deepNavy : colors.white} />
+              <Text style={[styles.modernSaveButtonText, { color: editing ? colors.deepNavy : colors.white }]}>
+                {editing ? 'Save' : 'Edit'}
+              </Text>
+            </>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView style={{ flex: 1, padding: 20 }} showsVerticalScrollIndicator={false}>
+        {/* Verification Status Badge */}
+        <View style={[
+          styles.modernInputCard, 
+          { 
+            backgroundColor: verificationStatus === 'approved' 
+              ? (colors.isDark ? '#1F3F2F' : '#D1FAE5')
+              : verificationStatus === 'rejected'
+              ? (colors.isDark ? '#3F1F1F' : '#FEE2E2')
+              : (colors.isDark ? '#3B2817' : '#FEF3C7'),
+            borderWidth: 2,
+            borderColor: verificationStatus === 'approved'
+              ? (colors.isDark ? '#86EFAC' : '#065F46')
+              : verificationStatus === 'rejected'
+              ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+              : (colors.isDark ? '#FCD34D' : '#D97706'),
+            padding: 16,
+            alignItems: 'center',
+            marginBottom: 20
+          }
+        ]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Icon 
+              name={verificationStatus === 'approved' ? 'verified' : verificationStatus === 'rejected' ? 'cancel' : 'pending'} 
+              size={28} 
+              color={
+                verificationStatus === 'approved'
+                  ? (colors.isDark ? '#86EFAC' : '#065F46')
+                  : verificationStatus === 'rejected'
+                  ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                  : (colors.isDark ? '#FCD34D' : '#D97706')
+              } 
+            />
+            <Text style={[
+              styles.contentTitle, 
+              { 
+                color: verificationStatus === 'approved'
+                  ? (colors.isDark ? '#86EFAC' : '#065F46')
+                  : verificationStatus === 'rejected'
+                  ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                  : (colors.isDark ? '#FCD34D' : '#D97706'),
+                fontSize: 18,
+                fontFamily: fonts.bold
+              }
+            ]}>
+              {verificationStatus === 'approved' ? 'Verified Company' : verificationStatus === 'rejected' ? 'Verification Rejected' : 'Verification Pending'}
+            </Text>
+          </View>
+          <Text style={[
+            styles.modernInputLabel,
+            {
+              color: verificationStatus === 'approved'
+                ? (colors.isDark ? '#86EFAC' : '#065F46')
+                : verificationStatus === 'rejected'
+                ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                : (colors.isDark ? '#FCD34D' : '#D97706'),
+              marginTop: 8,
+              textAlign: 'center'
+            }
+          ]}>
+            {verificationStatus === 'approved' 
+              ? 'Your company has been verified by our administrators'
+              : verificationStatus === 'rejected'
+              ? 'Your verification request was rejected. Please contact support for more information.'
+              : 'Your company verification is under review by our administrators'}
+          </Text>
+        </View>
+
+        {/* Company Logo */}
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, alignItems: 'center', padding: 20 }]}>
+          {logoUrl ? (
+            <Image source={{ uri: logoUrl }} style={{ width: 120, height: 120, borderRadius: 60 }} />
+          ) : (
+            <View style={{ width: 120, height: 120, borderRadius: 60, backgroundColor: colors.lightGray, alignItems: 'center', justifyContent: 'center' }}>
+              <Icon name="business" size={48} color={colors.warmGray} />
+            </View>
+          )}
+          {editing && (
+            <TouchableOpacity
+              style={[styles.modernSaveButton, { backgroundColor: colors.beeYellow, marginTop: 16 }]}
+              onPress={pickLogo}
+              disabled={uploadingLogo}
+            >
+              {uploadingLogo ? (
+                <ActivityIndicator size="small" color={colors.deepNavy} />
+              ) : (
+                <>
+                  <Icon name="photo-camera" size={16} color={colors.deepNavy} />
+                  <Text style={[styles.modernSaveButtonText, { color: colors.deepNavy }]}>Change Logo</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Company Information */}
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Company Name</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={companyName}
+            onChangeText={setCompanyName}
+            editable={editing}
+            placeholder="Company Name"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Description</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white, height: 100 }]}
+            value={companyDescription}
+            onChangeText={setCompanyDescription}
+            editable={editing}
+            multiline
+            placeholder="Company Description"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Industry</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={industry}
+            onChangeText={setIndustry}
+            editable={editing}
+            placeholder="Industry"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Company Size</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={companySize}
+            onChangeText={setCompanySize}
+            editable={editing}
+            placeholder="Company Size"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Founded Year</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={foundedYear}
+            onChangeText={setFoundedYear}
+            editable={editing}
+            placeholder="e.g., 2020"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Website</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={website}
+            onChangeText={setWebsite}
+            editable={editing}
+            placeholder="https://company.com"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Email</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={companyEmail}
+            onChangeText={setCompanyEmail}
+            editable={editing}
+            placeholder="contact@company.com"
+            placeholderTextColor={colors.warmGray}
+            keyboardType="email-address"
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Phone</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={companyPhone}
+            onChangeText={setCompanyPhone}
+            editable={editing}
+            placeholder="+251-XXX-XXXX"
+            placeholderTextColor={colors.warmGray}
+            keyboardType="phone-pad"
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Address</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={address}
+            onChangeText={setAddress}
+            editable={editing}
+            placeholder="Street Address"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>City</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={city}
+            onChangeText={setCity}
+            editable={editing}
+            placeholder="City"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Country</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={country}
+            onChangeText={setCountry}
+            editable={editing}
+            placeholder="Country"
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        {/* Social Media Links */}
+        <Text style={[styles.modernInputLabel, { color: colors.deepNavy, marginTop: 24, marginBottom: 12, fontSize: 16, fontFamily: fonts.bold }]}>Social Media</Text>
+        
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 8 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>LinkedIn</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={linkedIn}
+            onChangeText={setLinkedIn}
+            editable={editing}
+            placeholder="https://linkedin.com/company/..."
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Facebook</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={facebook}
+            onChangeText={setFacebook}
+            editable={editing}
+            placeholder="https://facebook.com/..."
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+
+        <View style={[styles.modernInputCard, { backgroundColor: colors.white, marginTop: 16, marginBottom: 30 }]}>
+          <Text style={[styles.modernInputLabel, { color: colors.deepNavy }]}>Twitter</Text>
+          <TextInput
+            style={[styles.modernInput, { color: colors.deepNavy, backgroundColor: editing ? colors.lightGray : colors.white }]}
+            value={twitter}
+            onChangeText={setTwitter}
+            editable={editing}
+            placeholder="https://twitter.com/..."
+            placeholderTextColor={colors.warmGray}
+          />
+        </View>
+      </ScrollView>
+    </View>
+  );
+}
+
 // Admin Panel Screen with Sidebar
 function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeColors }: any) {
   const [activeTab, setActiveTab] = useState('analytics');
   const [user, setUser] = useState<any>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const colors = themeColors || lightColors;
 
   // URL query-based routing for maintaining state on refresh
@@ -5154,7 +10623,7 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
     if (typeof window !== 'undefined') {
       const urlParams = new URLSearchParams(window.location.search);
       const tabFromURL = urlParams.get('tab');
-      if (tabFromURL && ['analytics', 'categories', 'jobs', 'telegram', 'users', 'subscriptions'].includes(tabFromURL)) {
+      if (tabFromURL && ['analytics', 'categories', 'jobs', 'telegram', 'users', 'companies', 'subscriptions', 'support'].includes(tabFromURL)) {
         setActiveTab(tabFromURL);
       }
     }
@@ -5197,36 +10666,60 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
     { id: 'jobs', title: 'Jobs', icon: 'work' },
     { id: 'telegram', title: 'Telegram Channels', icon: 'chat' },
     { id: 'users', title: 'Users', icon: 'people' },
-    { id: 'subscriptions', title: 'Subscriptions', icon: 'card-membership' }
+    { id: 'companies', title: 'Company Verifications', icon: 'business' },
+    { id: 'subscriptions', title: 'Subscriptions', icon: 'card-membership' },
+    { id: 'support', title: 'Support Requests', icon: 'support' }
   ];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.white }]}>
       <View style={styles.adminContainer}>
         {/* Sidebar */}
-        <View style={[styles.sidebar, { backgroundColor: colors.sidebarBg, borderRightColor: colors.sidebarBorder }]}>
+        <View style={[
+          styles.sidebar, 
+          { backgroundColor: colors.sidebarBg, borderRightColor: colors.sidebarBorder },
+          isSidebarCollapsed && styles.sidebarCollapsed
+        ]}>
           <View style={[styles.sidebarHeader, { borderBottomColor: colors.sidebarBorder }]}>
             <View style={styles.sidebarLogoContainer}>
               <View style={styles.logoIconContainer}>
                 <Image source={require('./assets/favicon.png')} style={styles.sidebarLogoImage} />
               </View>
-              <Text style={[styles.sidebarLogo, { color: colors.sidebarTextActive }]}>Admin Panel</Text>
+              {!isSidebarCollapsed && (
+                <Text style={[styles.sidebarLogo, { color: colors.sidebarTextActive }]}>Admin Panel</Text>
+              )}
             </View>
-            <View style={styles.userContainer}>
-              <View style={styles.userAvatar}>
-                <Icon name="person" size={16} color={colors.sidebarAccent} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.sidebarUser, { color: colors.sidebarText }]}>
-                  {user ? `${user.profile?.firstName || 'Admin'}` : 'Loading...'}
-                </Text>
-                {user && user.role && (
-                  <Text style={[styles.sidebarUserRole, { color: colors.warmGray }]}>
-                    {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+            {!isSidebarCollapsed && (
+              <View style={styles.userContainer}>
+                <View style={styles.userAvatar}>
+                  <Icon name="person" size={16} color={colors.sidebarAccent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.sidebarUser, { color: colors.sidebarText }]}>
+                    {user ? `${user.profile?.firstName || 'Admin'}` : 'Loading...'}
                   </Text>
-                )}
+                  {user && user.role && (
+                    <Text style={[styles.sidebarUserRole, { color: colors.warmGray }]}>
+                      {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                    </Text>
+                  )}
+                </View>
               </View>
-            </View>
+            )}
+            {/* Collapse Toggle Button */}
+            <TouchableOpacity
+              onPress={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              style={[
+                styles.collapseButton,
+                { backgroundColor: colors.sidebarAccentLight }
+              ]}
+            >
+              <Icon 
+                name={isSidebarCollapsed ? "chevron-right" : "chevron-left"} 
+                size={20} 
+                color={colors.sidebarAccent} 
+              />
+            </TouchableOpacity>
           </View>
 
           {sidebarItems.map((item) => (
@@ -5234,7 +10727,8 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
               key={item.id}
               style={[
                 styles.sidebarItem,
-                activeTab === item.id && { ...styles.sidebarItemActive, backgroundColor: colors.sidebarAccentLight }
+                activeTab === item.id && { ...styles.sidebarItemActive, backgroundColor: colors.sidebarAccentLight },
+                isSidebarCollapsed && styles.sidebarItemCollapsed
               ]}
               onPress={() => handleTabChange(item.id)}
             >
@@ -5248,13 +10742,15 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
                   color={activeTab === item.id ? colors.sidebarAccent : colors.sidebarText} 
                 />
               </View>
-              <Text style={[
-                styles.sidebarText,
-                { color: colors.sidebarText },
-                activeTab === item.id && { ...styles.sidebarTextActive, color: colors.sidebarTextActive }
-              ]}>
-                {item.title}
-              </Text>
+              {!isSidebarCollapsed && (
+                <Text style={[
+                  styles.sidebarText,
+                  { color: colors.sidebarText },
+                  activeTab === item.id && { ...styles.sidebarTextActive, color: colors.sidebarTextActive }
+                ]}>
+                  {item.title}
+                </Text>
+              )}
               {activeTab === item.id && <View style={styles.activeIndicator} />}
             </TouchableOpacity>
           ))}
@@ -5269,7 +10765,8 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
                 borderTopWidth: 1,
                 borderTopColor: colors.sidebarBorder,
                 paddingTop: 16
-              }
+              },
+              isSidebarCollapsed && styles.sidebarItemCollapsed
             ]}
           >
             <View style={styles.iconContainer}>
@@ -5279,16 +10776,26 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
                 color={isDarkMode ? '#FCD34D' : colors.sidebarText} 
               />
             </View>
-            <Text style={[styles.sidebarText, { color: colors.sidebarText }]}>
-              {isDarkMode ? 'Light Mode' : 'Dark Mode'}
-            </Text>
+            {!isSidebarCollapsed && (
+              <Text style={[styles.sidebarText, { color: colors.sidebarText }]}>
+                {isDarkMode ? 'Light Mode' : 'Dark Mode'}
+              </Text>
+            )}
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+          <TouchableOpacity 
+            style={[
+              styles.logoutButton,
+              isSidebarCollapsed && styles.logoutButtonCollapsed
+            ]} 
+            onPress={handleLogout}
+          >
             <View style={styles.logoutIconContainer}>
               <Icon name="logout" size={18} color={colors.danger} />
             </View>
-            <Text style={styles.logoutText}>Sign Out</Text>
+            {!isSidebarCollapsed && (
+              <Text style={styles.logoutText}>Sign Out</Text>
+            )}
           </TouchableOpacity>
         </View>
 
@@ -5299,7 +10806,9 @@ function AdminPanelScreen({ navigation, isDarkMode, toggleTheme, colors: themeCo
           {activeTab === 'jobs' && <JobsContent colors={colors} />}
           {activeTab === 'telegram' && <TelegramChannelsScreen colors={colors} />}
           {activeTab === 'users' && <UsersContent colors={colors} />}
+          {activeTab === 'companies' && <CompanyVerificationsContent colors={colors} />}
           {activeTab === 'subscriptions' && <SubscriptionsContent colors={colors} />}
+          {activeTab === 'support' && <SupportRequestsContent colors={colors} />}
         </View>
       </View>
     </SafeAreaView>
@@ -6047,6 +11556,7 @@ function UsersContent({ colors = lightColors }: { colors?: any }) {
               <Text style={[styles.tableHeaderCell, { flex: 2, color: colors.warmGray }]}>Email</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1.5, color: colors.warmGray }]}>Display Name</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Role</Text>
+              <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Verification</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Subscription</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Status</Text>
               <Text style={[styles.tableHeaderCell, { flex: 1, color: colors.warmGray }]}>Created</Text>
@@ -6105,6 +11615,35 @@ function UsersContent({ colors = lightColors }: { colors?: any }) {
                           {user.role || 'user'}
                         </Text>
                       </View>
+                    </View>
+                    <View style={[styles.tableCell, { flex: 1 }]}>
+                      {user.role === 'company' ? (
+                        <View style={[
+                          styles.roleBadge,
+                          { 
+                            backgroundColor: user.companyProfile?.verificationStatus === 'approved'
+                              ? (colors.isDark ? '#1F3F2F' : '#D1FAE5')
+                              : user.companyProfile?.verificationStatus === 'rejected'
+                              ? (colors.isDark ? '#3F1F1F' : '#FEE2E2')
+                              : (colors.isDark ? '#3B2817' : '#FEF3C7')
+                          }
+                        ]}>
+                          <Text style={[
+                            styles.roleBadgeText,
+                            { 
+                              color: user.companyProfile?.verificationStatus === 'approved'
+                                ? (colors.isDark ? '#86EFAC' : '#065F46')
+                                : user.companyProfile?.verificationStatus === 'rejected'
+                                ? (colors.isDark ? '#FCA5A5' : '#DC2626')
+                                : (colors.isDark ? '#FCD34D' : '#D97706')
+                            }
+                          ]}>
+                            {user.companyProfile?.verificationStatus === 'approved' ? '✓ Verified' : user.companyProfile?.verificationStatus === 'rejected' ? '✗ Rejected' : '⋯ Pending'}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={{ fontSize: 12, color: colors.warmGray, fontFamily: fonts.regular }}>—</Text>
+                      )}
                     </View>
                     <View style={[styles.tableCell, { flex: 1 }]}>
                       <View style={[
@@ -6537,7 +12076,7 @@ function SubscriptionsContent({ colors = lightColors }: { colors?: any }) {
               width: 48, 
               height: 48, 
               borderRadius: 12, 
-              backgroundColor: plan.color + '15',
+              backgroundColor: `${plan.color}15`,
               justifyContent: 'center',
               alignItems: 'center',
               marginBottom: 16,
@@ -6846,6 +12385,698 @@ function SubscriptionsContent({ colors = lightColors }: { colors?: any }) {
           );
         })}
       </View>
+    </View>
+  );
+}
+
+// Support Requests Content
+function SupportRequestsContent({ colors = lightColors }: { colors?: any }) {
+  const [activeTab, setActiveTab] = useState<'contact' | 'feedback'>('contact');
+  const [contactRequests, setContactRequests] = useState<any[]>([]);
+  const [feedbackRequests, setFeedbackRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRequest, setSelectedRequest] = useState<any>(null);
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    fetchRequests();
+  }, [activeTab]);
+
+  const fetchRequests = async () => {
+    try {
+      setLoading(true);
+      
+      if (activeTab === 'contact') {
+        const contactRef = collection(db, 'contactSupport');
+        const contactQuery = dbQuery(contactRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(contactQuery);
+        const requests = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setContactRequests(requests);
+      } else {
+        const feedbackRef = collection(db, 'feedback');
+        const feedbackQuery = dbQuery(feedbackRef, orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(feedbackQuery);
+        const requests = snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        }));
+        setFeedbackRequests(requests);
+      }
+    } catch (error) {
+      console.error('Error fetching support requests:', error);
+      Alert.alert('Error', 'Failed to load support requests');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateStatus = async (requestId: string, newStatus: string) => {
+    try {
+      setUpdating(true);
+      const collectionName = activeTab === 'contact' ? 'contactSupport' : 'feedback';
+      const requestRef = doc(db, collectionName, requestId);
+      
+      await updateDoc(requestRef, {
+        status: newStatus,
+        updatedAt: new Date()
+      });
+
+      // Update local state
+      if (activeTab === 'contact') {
+        setContactRequests(contactRequests.map(req => 
+          req.id === requestId ? { ...req, status: newStatus } : req
+        ));
+      } else {
+        setFeedbackRequests(feedbackRequests.map(req => 
+          req.id === requestId ? { ...req, status: newStatus } : req
+        ));
+      }
+
+      Alert.alert('Success', 'Status updated successfully');
+      setSelectedRequest(null);
+    } catch (error) {
+      console.error('Error updating status:', error);
+      Alert.alert('Error', 'Failed to update status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp.seconds * 1000);
+      return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return '#F59E0B';
+      case 'in-progress': return '#3B82F6';
+      case 'resolved': return '#10B981';
+      case 'closed': return '#6B7280';
+      default: return '#6B7280';
+    }
+  };
+
+  const requests = activeTab === 'contact' ? contactRequests : feedbackRequests;
+
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.contentHeader}>
+        <Icon name="support" size={24} color={colors.beeYellow} />
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Support Requests</Text>
+      </View>
+
+      {/* Tab Switcher */}
+      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 24 }}>
+        <TouchableOpacity
+          onPress={() => setActiveTab('contact')}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            paddingHorizontal: 20,
+            backgroundColor: activeTab === 'contact' ? colors.beeYellow : colors.white,
+            borderRadius: 8,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: activeTab === 'contact' ? colors.beeYellow : colors.lightGray
+          }}
+        >
+          <Text style={{ 
+            fontSize: 15, 
+            fontWeight: '600', 
+            color: activeTab === 'contact' ? colors.deepNavy : colors.warmGray,
+            fontFamily: fonts.medium
+          }}>
+            Contact Support ({contactRequests.length})
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => setActiveTab('feedback')}
+          style={{
+            flex: 1,
+            paddingVertical: 12,
+            paddingHorizontal: 20,
+            backgroundColor: activeTab === 'feedback' ? colors.beeYellow : colors.white,
+            borderRadius: 8,
+            alignItems: 'center',
+            borderWidth: 1,
+            borderColor: activeTab === 'feedback' ? colors.beeYellow : colors.lightGray
+          }}
+        >
+          <Text style={{ 
+            fontSize: 15, 
+            fontWeight: '600', 
+            color: activeTab === 'feedback' ? colors.deepNavy : colors.warmGray,
+            fontFamily: fonts.medium
+          }}>
+            Feedback ({feedbackRequests.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
+      {loading ? (
+        <View style={[styles.loadingContainer, { backgroundColor: colors.white }]}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading requests...</Text>
+        </View>
+      ) : requests.length === 0 ? (
+        <View style={[styles.emptyState, { backgroundColor: colors.white, padding: 40, borderRadius: 12 }]}>
+          <Icon name={activeTab === 'contact' ? 'contact-support' : 'feedback'} size={64} color={colors.warmGray} />
+          <Text style={[styles.emptyStateText, { color: colors.warmGray, marginTop: 16 }]}>
+            No {activeTab === 'contact' ? 'contact requests' : 'feedback'} yet
+          </Text>
+        </View>
+      ) : (
+        <View style={{ backgroundColor: colors.white, borderRadius: 12, padding: 20, borderWidth: 1, borderColor: colors.lightGray }}>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {requests.map((request, index) => (
+              <View 
+                key={request.id}
+                style={{
+                  padding: 16,
+                  backgroundColor: index % 2 === 0 ? colors.cream : colors.white,
+                  borderRadius: 8,
+                  marginBottom: 12,
+                  borderWidth: 1,
+                  borderColor: colors.lightGray
+                }}
+              >
+                {activeTab === 'contact' ? (
+                  <>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.bold }}>
+                          {request.name}
+                        </Text>
+                        <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 2, fontFamily: fonts.regular }}>
+                          {request.email}
+                        </Text>
+                        {request.phone && (
+                          <Text style={{ fontSize: 14, color: colors.warmGray, fontFamily: fonts.regular }}>
+                            {request.phone}
+                          </Text>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <View style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 6,
+                          backgroundColor: getStatusColor(request.status) + '20',
+                          marginBottom: 8
+                        }}>
+                          <Text style={{ 
+                            fontSize: 12, 
+                            fontWeight: '600', 
+                            color: getStatusColor(request.status),
+                            textTransform: 'capitalize',
+                            fontFamily: fonts.medium
+                          }}>
+                            {request.status}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, fontFamily: fonts.regular }}>
+                          {formatDate(request.createdAt)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.medium }}>
+                        Subject:
+                      </Text>
+                      <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.regular }}>
+                        {request.subject}
+                      </Text>
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.medium }}>
+                        Message:
+                      </Text>
+                      <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 20, fontFamily: fonts.regular }}>
+                        {request.message}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '700', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.bold }}>
+                          {request.category}
+                        </Text>
+                        {request.rating > 0 && (
+                          <View style={{ flexDirection: 'row', gap: 4, marginBottom: 4 }}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <Icon 
+                                key={star}
+                                name={star <= request.rating ? 'star' : 'star-border'} 
+                                size={16} 
+                                color={colors.beeYellow} 
+                              />
+                            ))}
+                          </View>
+                        )}
+                      </View>
+                      <View style={{ alignItems: 'flex-end' }}>
+                        <View style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 6,
+                          backgroundColor: getStatusColor(request.status) + '20',
+                          marginBottom: 8
+                        }}>
+                          <Text style={{ 
+                            fontSize: 12, 
+                            fontWeight: '600', 
+                            color: getStatusColor(request.status),
+                            textTransform: 'capitalize',
+                            fontFamily: fonts.medium
+                          }}>
+                            {request.status}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, fontFamily: fonts.regular }}>
+                          {formatDate(request.createdAt)}
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={{ marginBottom: 12 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.medium }}>
+                        Feedback:
+                      </Text>
+                      <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 20, fontFamily: fonts.regular }}>
+                        {request.feedback}
+                      </Text>
+                    </View>
+                  </>
+                )}
+
+                {/* Status Update Buttons */}
+                <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                  {['pending', 'in-progress', 'resolved', 'closed'].map((status) => (
+                    <TouchableOpacity
+                      key={status}
+                      onPress={() => updateStatus(request.id, status)}
+                      disabled={request.status === status || updating}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        borderRadius: 6,
+                        backgroundColor: request.status === status ? getStatusColor(status) : colors.lightGray,
+                        opacity: updating ? 0.5 : 1
+                      }}
+                    >
+                      <Text style={{ 
+                        fontSize: 12, 
+                        fontWeight: '600', 
+                        color: request.status === status ? colors.white : colors.deepNavy,
+                        textTransform: 'capitalize',
+                        fontFamily: fonts.medium
+                      }}>
+                        {status.replace('-', ' ')}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+}
+
+// Company Verifications Content
+function CompanyVerificationsContent({ colors = lightColors }: { colors?: any }) {
+  const [companies, setCompanies] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedCompany, setSelectedCompany] = useState<any>(null);
+  const [updating, setUpdating] = useState(false);
+  const [filterStatus, setFilterStatus] = useState<string>('all'); // all, pending, approved, rejected
+
+  useEffect(() => {
+    fetchCompanies();
+  }, [filterStatus]);
+
+  const fetchCompanies = async () => {
+    try {
+      setLoading(true);
+      const usersRef = collection(db, 'users');
+      const q = dbQuery(usersRef, where('role', '==', 'company'));
+      const querySnapshot = await getDocs(q);
+
+      const fetchedCompanies: any[] = [];
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (filterStatus === 'all' || data.companyProfile?.verificationStatus === filterStatus) {
+          fetchedCompanies.push({
+            id: doc.id,
+            ...data
+          });
+        }
+      });
+
+      // Sort by submission date (newest first)
+      fetchedCompanies.sort((a, b) => {
+        const dateA = a.companyProfile?.submittedAt?.seconds || 0;
+        const dateB = b.companyProfile?.submittedAt?.seconds || 0;
+        return dateB - dateA;
+      });
+
+      setCompanies(fetchedCompanies);
+    } catch (error) {
+      console.error('Error fetching companies:', error);
+      Alert.alert('Error', 'Failed to load company verifications');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerificationUpdate = async (userId: string, newStatus: 'approved' | 'rejected') => {
+    try {
+      setUpdating(true);
+      
+      const userRef = doc(db, 'users', userId);
+      const company = companies.find(c => c.id === userId);
+      
+      await updateDoc(userRef, {
+        'companyProfile.verificationStatus': newStatus,
+        'companyProfile.verifiedAt': new Date(),
+        updatedAt: new Date()
+      });
+
+      // Send notification email
+      try {
+        const notifyCompanyVerification = httpsCallable(functions, 'notifyCompanyVerification');
+        await notifyCompanyVerification({
+          userEmail: company.email,
+          userName: company.displayName || company.name || 'User',
+          companyName: company.companyProfile?.companyName || 'Company',
+          status: newStatus
+        });
+        Alert.alert('Success', `Company ${newStatus} successfully! Email notification sent.`);
+      } catch (emailError) {
+        console.error('Failed to send email notification:', emailError);
+        Alert.alert('Success', `Company ${newStatus} successfully! (Email notification failed)`);
+      }
+
+      // Refresh list
+      await fetchCompanies();
+      setSelectedCompany(null);
+    } catch (error) {
+      console.error('Error updating verification status:', error);
+      Alert.alert('Error', 'Failed to update verification status');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const formatDate = (timestamp: any) => {
+    if (!timestamp) return 'N/A';
+    try {
+      return new Date(timestamp.seconds * 1000).toLocaleDateString();
+    } catch {
+      return 'N/A';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return colors.success;
+      case 'rejected':
+        return colors.danger;
+      case 'pending':
+        return colors.beeYellow;
+      default:
+        return colors.warmGray;
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return 'verified';
+      case 'rejected':
+        return 'cancel';
+      case 'pending':
+        return 'pending';
+      default:
+        return 'help-outline';
+    }
+  };
+
+  const pendingCount = companies.filter(c => c.companyProfile?.verificationStatus === 'pending').length;
+  const approvedCount = companies.filter(c => c.companyProfile?.verificationStatus === 'approved').length;
+  const rejectedCount = companies.filter(c => c.companyProfile?.verificationStatus === 'rejected').length;
+
+  return (
+    <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
+      <View style={styles.usersHeader}>
+        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Company Verifications</Text>
+        <View style={styles.usersStats}>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Pending</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.beeYellow }]}>{pendingCount}</Text>
+          </View>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.success }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Approved</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.success }]}>{approvedCount}</Text>
+          </View>
+          <View style={[styles.statBadge, { backgroundColor: colors.cream, borderColor: colors.danger }]}>
+            <Text style={[styles.statBadgeLabel, { color: colors.warmGray }]}>Rejected</Text>
+            <Text style={[styles.statBadgeValue, { color: colors.danger }]}>{rejectedCount}</Text>
+          </View>
+        </View>
+      </View>
+
+      {/* Filter Tabs */}
+      <View style={{ flexDirection: 'row', gap: 12, marginBottom: 20, padding: 20, paddingBottom: 0 }}>
+        {['all', 'pending', 'approved', 'rejected'].map((status) => (
+          <TouchableOpacity
+            key={status}
+            style={[
+              styles.filterTab,
+              { backgroundColor: filterStatus === status ? colors.beeYellow : colors.white, borderColor: colors.lightGray }
+            ]}
+            onPress={() => setFilterStatus(status)}
+          >
+            <Text style={[
+              styles.filterTabText,
+              { color: filterStatus === status ? colors.deepNavy : colors.warmGray }
+            ]}>
+              {status.charAt(0).toUpperCase() + status.slice(1)}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading companies...</Text>
+        </View>
+      ) : companies.length === 0 ? (
+        <View style={styles.emptyState}>
+          <Icon name="business-center" size={48} color={colors.warmGray} />
+          <Text style={[styles.emptyStateText, { color: colors.warmGray }]}>
+            {filterStatus === 'all' ? 'No companies yet' : `No ${filterStatus} companies`}
+          </Text>
+        </View>
+      ) : (
+        <ScrollView style={{ padding: 20, paddingTop: 0 }}>
+          {companies.map((company) => {
+            const cp = company.companyProfile || {};
+            const status = cp.verificationStatus || 'pending';
+            
+            return (
+              <View 
+                key={company.id}
+                style={[
+                  styles.companyCard,
+                  { backgroundColor: colors.white, borderColor: colors.lightGray, marginBottom: 16, borderRadius: 12, overflow: 'hidden' }
+                ]}
+              >
+                {/* Header */}
+                <View style={{ flexDirection: 'row', padding: 20, borderBottomWidth: 1, borderBottomColor: colors.lightGray }}>
+                  {cp.logoUrl ? (
+                    <Image source={{ uri: cp.logoUrl }} style={{ width: 80, height: 80, borderRadius: 12, marginRight: 16 }} />
+                  ) : (
+                    <View style={{ width: 80, height: 80, borderRadius: 12, backgroundColor: colors.lightGray, marginRight: 16, alignItems: 'center', justifyContent: 'center' }}>
+                      <Icon name="business" size={40} color={colors.warmGray} />
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 20, fontWeight: '700', color: colors.deepNavy, marginBottom: 4, fontFamily: fonts.bold }}>
+                      {cp.companyName || 'Unnamed Company'}
+                    </Text>
+                    <Text style={{ fontSize: 14, color: colors.warmGray, marginBottom: 8, fontFamily: fonts.regular }}>
+                      {cp.industry || 'No industry specified'} • {cp.size || 'Size not specified'}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                      <Icon name={getStatusIcon(status)} size={16} color={getStatusColor(status)} />
+                      <Text style={{ fontSize: 14, color: getStatusColor(status), marginLeft: 6, fontWeight: '600', fontFamily: fonts.medium }}>
+                        {status.charAt(0).toUpperCase() + status.slice(1)}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => setSelectedCompany(selectedCompany?.id === company.id ? null : company)}
+                    style={{ padding: 8 }}
+                  >
+                    <Icon 
+                      name={selectedCompany?.id === company.id ? "expand-less" : "expand-more"} 
+                      size={24} 
+                      color={colors.deepNavy} 
+                    />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Expanded Details */}
+                {selectedCompany?.id === company.id && (
+                  <View style={{ padding: 20 }}>
+                    <View style={{ marginBottom: 20 }}>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.semibold }}>
+                        Company Description
+                      </Text>
+                      <Text style={{ fontSize: 14, color: colors.warmGray, lineHeight: 22, fontFamily: fonts.regular }}>
+                        {cp.description || 'No description provided'}
+                      </Text>
+                    </View>
+
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginBottom: 20 }}>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Contact Email</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.email || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Phone</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.phone || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Website</Text>
+                        <Text style={{ fontSize: 14, color: colors.softBlue, fontFamily: fonts.medium }}>{cp.website || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Location</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.city || 'N/A'}, {cp.country || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Founded Year</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.foundedYear || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Registration #</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.registrationNumber || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Tax ID</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{cp.taxId || 'N/A'}</Text>
+                      </View>
+                      <View style={{ flex: 1, minWidth: '45%' }}>
+                        <Text style={{ fontSize: 12, color: colors.warmGray, marginBottom: 4, fontFamily: fonts.regular }}>Submitted</Text>
+                        <Text style={{ fontSize: 14, color: colors.deepNavy, fontFamily: fonts.medium }}>{formatDate(cp.submittedAt)}</Text>
+                      </View>
+                    </View>
+
+                    {cp.registrationDocument && (
+                      <View style={{ marginBottom: 20 }}>
+                        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.deepNavy, marginBottom: 8, fontFamily: fonts.bold }}>
+                          Registration Document
+                        </Text>
+                        <TouchableOpacity
+                          onPress={() => Linking.openURL(cp.registrationDocument)}
+                          style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.lightGray, padding: 12, borderRadius: 8 }}
+                        >
+                          <Icon name="description" size={20} color={colors.deepNavy} />
+                          <Text style={{ marginLeft: 8, color: colors.softBlue, fontFamily: fonts.medium }}>View Document</Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
+                    {status === 'pending' && (
+                      <View style={{ flexDirection: 'row', gap: 12 }}>
+                        <TouchableOpacity
+                          style={[
+                            styles.modernButton,
+                            { flex: 1, backgroundColor: colors.success }
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Approve Company',
+                              `Are you sure you want to approve ${cp.companyName}?`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { 
+                                  text: 'Approve', 
+                                  onPress: () => handleVerificationUpdate(company.id, 'approved')
+                                }
+                              ]
+                            );
+                          }}
+                          disabled={updating}
+                        >
+                          {updating ? (
+                            <ActivityIndicator size="small" color={colors.white} />
+                          ) : (
+                            <>
+                              <Icon name="check-circle" size={20} color={colors.white} />
+                              <Text style={[styles.modernButtonText, { color: colors.white, marginLeft: 8 }]}>
+                                Approve
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[
+                            styles.modernButton,
+                            { flex: 1, backgroundColor: colors.danger }
+                          ]}
+                          onPress={() => {
+                            Alert.alert(
+                              'Reject Company',
+                              `Are you sure you want to reject ${cp.companyName}?`,
+                              [
+                                { text: 'Cancel', style: 'cancel' },
+                                { 
+                                  text: 'Reject', 
+                                  style: 'destructive',
+                                  onPress: () => handleVerificationUpdate(company.id, 'rejected')
+                                }
+                              ]
+                            );
+                          }}
+                          disabled={updating}
+                        >
+                          {updating ? (
+                            <ActivityIndicator size="small" color={colors.white} />
+                          ) : (
+                            <>
+                              <Icon name="cancel" size={20} color={colors.white} />
+                              <Text style={[styles.modernButtonText, { color: colors.white, marginLeft: 8 }]}>
+                                Reject
+                              </Text>
+                            </>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -7529,9 +13760,14 @@ function HomeScreen({ navigation }: any) {
     setIsDarkMode(!isDarkMode);
   };
   
-  const changeLanguage = (langCode: string) => {
+  const changeLanguage = async (langCode: string) => {
     setCurrentLanguage(langCode);
     setIsLanguageDropdownOpen(false); // Close dropdown after selection
+    try {
+      await AsyncStorage.setItem('selectedLanguage', langCode);
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+    }
   };
   
   const toggleLanguageDropdown = () => {
@@ -7547,6 +13783,18 @@ function HomeScreen({ navigation }: any) {
   };
 
   useEffect(() => {
+    const loadLanguage = async () => {
+      try {
+        const savedLanguage = await AsyncStorage.getItem('selectedLanguage');
+        if (savedLanguage) {
+          setCurrentLanguage(savedLanguage);
+        }
+      } catch (error) {
+        console.error('Error loading language preference:', error);
+      }
+    };
+    
+    loadLanguage();
     fetchJobs();
     fetchTelegramChannels();
     fetchCategories();
@@ -7904,6 +14152,39 @@ function HomeScreen({ navigation }: any) {
             
             {user && (
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                {/* Go to Dashboard Button */}
+                <TouchableOpacity 
+                  style={{
+                    paddingHorizontal: 16,
+                    paddingVertical: 8,
+                    borderRadius: 8,
+                    backgroundColor: colors.beeYellow,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                  }}
+                  onPress={() => {
+                    const userRole = userData?.role || 'user';
+                    if (userRole === 'superadmin' || userRole === 'admin') {
+                      navigation.navigate('AdminPanel');
+                    } else if (userRole === 'company') {
+                      navigation.navigate('CompanyDashboard');
+                    } else {
+                      navigation.navigate('Jobs');
+                    }
+                  }}
+                >
+                  {!isMobile && (
+                    <Text style={{
+                      fontSize: 14,
+                      color: colors.deepNavy,
+                      fontFamily: fonts.medium,
+                    }}>
+                      Go to Dashboard
+                    </Text>
+                  )}
+                </TouchableOpacity>
+
                 {/* User Profile */}
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                   {userData?.profilePicture ? (
@@ -7938,9 +14219,8 @@ function HomeScreen({ navigation }: any) {
                   {!isMobile && (
                     <Text style={{
                       fontSize: 14,
-                      fontWeight: '600',
                       color: colors.deepNavy,
-                      fontFamily: 'Inter-SemiBold',
+                      fontFamily: fonts.medium,
                     }}>
                       {userData?.displayName || user.email?.split('@')[0] || 'User'}
                     </Text>
@@ -7968,9 +14248,8 @@ function HomeScreen({ navigation }: any) {
                   {!isMobile && (
                     <Text style={{
                       fontSize: 14,
-                      fontWeight: '600',
                       color: colors.danger,
-                      fontFamily: 'Inter-SemiBold',
+                      fontFamily: fonts.medium,
                     }}>
                       Logout
                     </Text>
@@ -9014,6 +15293,8 @@ export default function App() {
         ForgotPassword: 'forgot-password',
         Jobs: 'jobs',
         Companies: 'companies',
+        CompanyRegistration: 'company-registration',
+        CompanyDashboard: 'company-dashboard',
         Bookmarks: 'bookmarks',
         Settings: 'settings',
         SettingsProfile: 'settings/profile',
@@ -9060,6 +15341,12 @@ export default function App() {
         </Stack.Screen>
         <Stack.Screen name="Settings">
           {(props) => <SettingsScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="CompanyRegistration">
+          {(props) => <CompanyRegistrationScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
+        </Stack.Screen>
+        <Stack.Screen name="CompanyDashboard">
+          {(props) => <CompanyDashboardScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
         </Stack.Screen>
         <Stack.Screen name="SettingsProfile">
           {(props) => <SettingsProfileScreen {...props} isDarkMode={isDarkMode} toggleTheme={toggleTheme} colors={colors} />}
@@ -9321,7 +15608,7 @@ const styles = StyleSheet.create({
   successMessageContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: lightColors.success + '20',
+    backgroundColor: `${lightColors.success}20`,
     padding: 12,
     borderRadius: 8,
     marginVertical: 16,
@@ -9357,12 +15644,14 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.white,
     borderBottomWidth: 1,
     borderBottomColor: lightColors.lightGray,
+    overflow: 'visible',
   },
   jobsToolbarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 16,
     flex: 1,
+    overflow: 'visible',
   },
   toolbarLogo: {
     width: 36,
@@ -9429,6 +15718,7 @@ const styles = StyleSheet.create({
   },
   toolbarLanguageContainer: {
     position: 'relative',
+    zIndex: 1000,
   },
   toolbarLanguageButton: {
     flexDirection: 'row',
@@ -9451,13 +15741,16 @@ const styles = StyleSheet.create({
     backgroundColor: lightColors.white,
     borderRadius: 8,
     paddingVertical: 8,
-    minWidth: 150,
+    minWidth: 180,
+    maxHeight: 300,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
-    zIndex: 1000,
+    elevation: 5,
+    zIndex: 1001,
+    borderWidth: 1,
+    borderColor: lightColors.lightGray,
   },
   languageMenuItem: {
     flexDirection: 'row',
@@ -9634,6 +15927,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontFamily: fonts.regular,
   },
+  modernProfileUsername: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+  },
   // Modern Menu Items
   modernMenuContainer: {
     paddingVertical: 8,
@@ -9776,6 +16074,172 @@ const styles = StyleSheet.create({
   },
   settingsSaveButtonDisabled: {
     opacity: 0.6,
+  },
+  // New Modern Settings Styles
+  settingsHeroSection: {
+    padding: 24,
+    borderBottomWidth: 1,
+  },
+  settingsHeroContent: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  settingsHeroLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  settingsHeroAvatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  settingsHeroAvatarPlaceholder: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsHeroInfo: {
+    marginLeft: 16,
+    flex: 1,
+  },
+  settingsHeroName: {
+    fontSize: 24,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  settingsHeroEmail: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    marginBottom: 4,
+  },
+  settingsHeroUsernameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 4,
+  },
+  settingsHeroUsername: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+  },
+  settingsEditProfileButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 2,
+  },
+  settingsEditProfileText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  settingsGridContainer: {
+    padding: 20,
+    gap: 16,
+  },
+  settingsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 20,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  settingsCardIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsCardContent: {
+    flex: 1,
+    marginLeft: 16,
+  },
+  settingsCardTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  settingsCardSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+  },
+  settingsQuickActions: {
+    padding: 20,
+  },
+  settingsQuickActionsTitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  settingsQuickActionsGrid: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  settingsQuickActionCard: {
+    flex: 1,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  settingsQuickActionText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  settingsQuickActionCount: {
+    fontSize: 11,
+    fontFamily: fonts.regular,
+    marginTop: 2,
+  },
+  settingsFooter: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  settingsFooterText: {
+    fontSize: 12,
+    fontFamily: fonts.regular,
+  },
+  settingsModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+  },
+  settingsModalBackButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsModalTitle: {
+    fontSize: 18,
+    fontFamily: fonts.regular,
+    fontWeight: '700',
   },
   settingsSaveButtonText: {
     fontSize: 14,
@@ -9963,16 +16427,26 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginBottom: 12,
   },
+  modernInput: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    padding: 16,
+    borderRadius: 8,
+    borderWidth: 1,
+    outlineStyle: 'none',
+  },
   modernTextInput: {
     fontSize: 16,
     fontFamily: fonts.regular,
-    padding: 14,
+    padding: 16,
     borderRadius: 8,
+    borderWidth: 1,
     outlineStyle: 'none',
   },
   modernTextArea: {
     minHeight: 120,
-    paddingTop: 14,
+    paddingTop: 16,
+    textAlignVertical: 'top',
   },
   modernTextInputDisabled: {
     opacity: 0.6,
@@ -10000,6 +16474,181 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: fonts.regular,
     fontWeight: '600',
+  },
+  // Portfolio Styles
+  portfolioLinkCard: {
+    padding: 20,
+    borderRadius: 12,
+    marginTop: 16,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  portfolioLinkTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  portfolioLinkSubtitle: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    marginTop: 2,
+  },
+  portfolioLinkBox: {
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 8,
+  },
+  portfolioLinkText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  portfolioActionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  portfolioActionButtonText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  portfolioCVCard: {
+    padding: 20,
+    borderRadius: 12,
+    marginBottom: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  cvUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    paddingVertical: 16,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
+  cvUploadButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  cvUploadedBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 12,
+    borderRadius: 8,
+  },
+  cvUploadedText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+    flex: 1,
+    marginLeft: 8,
+  },
+  cvChangeText: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    fontWeight: '600',
+  },
+  // Company Preview Styles
+  previewCard: {
+    margin: 16,
+    padding: 24,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  previewHeader: {
+    alignItems: 'center',
+    paddingBottom: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  previewAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    marginBottom: 16,
+  },
+  previewAvatarPlaceholder: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  previewName: {
+    fontSize: 24,
+    fontFamily: fonts.bold,
+    marginBottom: 4,
+  },
+  previewJobTitle: {
+    fontSize: 16,
+    fontFamily: fonts.regular,
+    marginBottom: 2,
+  },
+  previewCompany: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+  },
+  previewSection: {
+    paddingTop: 20,
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+  },
+  previewSectionTitle: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    marginBottom: 12,
+  },
+  previewSectionText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    lineHeight: 24,
+  },
+  previewSkillsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  previewSkillChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  previewSkillText: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    fontWeight: '500',
+  },
+  previewLinkRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 8,
+  },
+  previewLinkText: {
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    textDecorationLine: 'underline',
   },
   // Modern Toggle Styles
   modernToggleRow: {
@@ -10289,7 +16938,7 @@ const styles = StyleSheet.create({
   },
   logoutButtonText: {
     fontSize: 14,
-    fontFamily: fonts.regular,
+    fontFamily: fonts.medium,
     color: lightColors.deepNavy,
   },
   jobsPageContainer: {
@@ -10326,7 +16975,7 @@ const styles = StyleSheet.create({
   },
   filterSidebarTitle: {
     fontSize: 18,
-    fontFamily: fonts.semibold,
+    fontFamily: fonts.medium,
     color: lightColors.deepNavy,
     marginBottom: 20,
     paddingBottom: 12,
@@ -10442,7 +17091,7 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     paddingHorizontal: 8,
     paddingVertical: 8,
-    marginBottom: 40,
+    marginBottom: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.2,
@@ -10505,7 +17154,64 @@ const styles = StyleSheet.create({
   statDivider: {
     width: 1,
     height: 80,
-    backgroundColor: lightColors.cream + '40',
+    backgroundColor: `${lightColors.cream}40`,
+  },
+
+  // Mobile App CTA Banner
+  mobileAppBanner: {
+    marginTop: 12,
+    paddingVertical: 0,
+    paddingHorizontal: 20,
+    flexDirection: 'column',
+    gap: 12,
+    alignItems: 'center',
+  },
+  mobileAppBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    justifyContent: 'center',
+  },
+  mobileAppIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mobileAppTextContainer: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  mobileAppBannerTitle: {
+    fontSize: 18,
+    fontFamily: fonts.bold,
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  mobileAppBannerSubtitle: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+  },
+  playstoreButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playstoreButtonImage: {
+    width: 259,
+    height: 86,
+  },
+  playstoreButtonText: {
+    fontSize: 15,
+    fontFamily: fonts.bold,
+  },
+  mobileAppDisclaimer: {
+    fontSize: 13,
+    fontFamily: fonts.regular,
+    textAlign: 'center',
+    maxWidth: 500,
+    lineHeight: 18,
   },
 
   // Category Pills
@@ -10621,7 +17327,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 3,
     borderWidth: 1,
-    borderColor: lightColors.lightGray + '40',
+    borderColor: `${lightColors.lightGray}40`,
     position: 'relative',
   },
   modernJobCardList: {
@@ -10742,7 +17448,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: lightColors.success + '10',
+    backgroundColor: `${lightColors.success}10`,
     borderRadius: 8,
     gap: 6,
   },
@@ -10919,9 +17625,9 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     borderRadius: 10,
     gap: 8,
-    backgroundColor: lightColors.softBlue + '15',
+    backgroundColor: `${lightColors.softBlue}15`,
     borderWidth: 1,
-    borderColor: lightColors.softBlue + '30',
+    borderColor: `${lightColors.softBlue}30`,
     shadowColor: lightColors.softBlue,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -10936,11 +17642,10 @@ const styles = StyleSheet.create({
   },
   filterGroup: {
     marginBottom: 28,
-    backgroundColor: lightColors.cream + '80',
     borderRadius: 14,
     padding: 18,
     borderWidth: 1,
-    borderColor: lightColors.lightGray + '60',
+    borderColor: `${lightColors.lightGray}60`,
   },
   filterGroupHeader: {
     flexDirection: 'row',
@@ -10994,7 +17699,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     gap: 14,
     borderWidth: 1.5,
-    borderColor: lightColors.lightGray + '60',
+    borderColor: `${lightColors.lightGray}60`,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
@@ -11164,12 +17869,12 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 8,
-    backgroundColor: lightColors.softBlue + '15',
+    backgroundColor: `${lightColors.softBlue}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
   remoteTag: {
-    backgroundColor: lightColors.success + '15',
+    backgroundColor: `${lightColors.success}15`,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 12,
@@ -11296,6 +18001,29 @@ const styles = StyleSheet.create({
     color: '#111827',
     fontFamily: fonts.regular,
   },
+  sidebarCollapsed: {
+    width: 80,
+  },
+  sidebarItemCollapsed: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
+  },
+  collapseButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: '#FEF3C7',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 2,
+  },
   logoutButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -11307,6 +18035,10 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#FEF2F2',
     borderWidth: 0,
+  },
+  logoutButtonCollapsed: {
+    justifyContent: 'center',
+    paddingHorizontal: 0,
   },
   logoutIcon: {
     fontSize: 22,
@@ -11338,6 +18070,12 @@ const styles = StyleSheet.create({
     marginBottom: 32,
     gap: 20,
   },
+  statsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+    marginTop: 8,
+  },
   statCard: {
     backgroundColor: '#FFFFFF',
     padding: 24,
@@ -11358,6 +18096,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#111827',
     letterSpacing: -1,
+  },
+  statValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: '#111827',
+    marginTop: 12,
+    marginBottom: 4,
   },
   statLabel: {
     fontSize: 14,
@@ -11612,6 +18357,25 @@ const styles = StyleSheet.create({
     color: lightColors.warmGray,
     marginTop: 16,
     textAlign: 'center',
+  },
+  filterTab: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  filterTabText: {
+    fontSize: 14,
+    fontFamily: fonts.medium,
+  },
+  companyCard: {
+    borderWidth: 1,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   loadingContainer: {
     alignItems: 'center',
@@ -12430,7 +19194,7 @@ const styles = StyleSheet.create({
     width: 300,
     backgroundColor: lightColors.white,
     borderLeftWidth: 1,
-    borderLeftColor: lightColors.lightGray + '80',
+    borderLeftColor: `${lightColors.lightGray}80`,
     paddingVertical: 24,
     paddingHorizontal: 20,
     shadowColor: '#000',
@@ -13748,7 +20512,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: lightColors.beeYellow + '15',
+    backgroundColor: `${lightColors.beeYellow}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -13862,7 +20626,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 8,
-    backgroundColor: lightColors.beeYellow + '15',
+    backgroundColor: `${lightColors.beeYellow}15`,
     justifyContent: 'center',
     alignItems: 'center',
   },
