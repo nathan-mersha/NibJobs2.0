@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
+    
+    <!-- Primary Meta Tags -->
+    <title>NibJobs - Find Your Dream Job in Ethiopia</title>
+    <meta name="title" content="NibJobs - Find Your Dream Job in Ethiopia" />
+    <meta name="description" content="Ethiopia's premier job portal connecting talented professionals with exciting career opportunities across the nation." />
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://nibjobs.com/" />
+    <meta property="og:title" content="NibJobs - Find Your Dream Job in Ethiopia" />
+    <meta property="og:description" content="Ethiopia's premier job portal connecting talented professionals with exciting career opportunities across the nation." />
+    <meta property="og:image" content="https://nibjobs.com/og-image.png" />
+    
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://nibjobs.com/" />
+    <meta property="twitter:title" content="NibJobs - Find Your Dream Job in Ethiopia" />
+    <meta property="twitter:description" content="Ethiopia's premier job portal connecting talented professionals with exciting career opportunities across the nation." />
+    <meta property="twitter:image" content="https://nibjobs.com/og-image.png" />
+    
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/favicon.png" />
+    
+    <style>
+      /* Reset and Base Styles */
+      * {
+        box-sizing: border-box;
+      }
+      
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+          'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        overflow-x: hidden;
+      }
+      
+      #root {
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        width: 100%;
+      }
+      
+      /* Loading Spinner */
+      .loading-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background-color: #FFC107;
+      }
+      
+      .spinner {
+        width: 50px;
+        height: 50px;
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #1A2332;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      /* Remove default focus outline and add custom styles */
+      input:focus,
+      textarea:focus,
+      select:focus {
+        outline: none;
+      }
+      
+      /* Prevent zoom on mobile when focusing inputs */
+      @media screen and (max-width: 768px) {
+        input[type="text"],
+        input[type="email"],
+        input[type="password"],
+        input[type="number"],
+        textarea,
+        select {
+          font-size: 16px !important;
+        }
+      }
+      
+      /* Custom placeholder styling */
+      ::placeholder {
+        color: #9ca3af;
+        opacity: 1;
+      }
+      
+      :-ms-input-placeholder {
+        color: #9ca3af;
+      }
+      
+      ::-ms-input-placeholder {
+        color: #9ca3af;
+      }
+      
+      /* Smooth transitions for inputs */
+      input {
+        transition: all 0.2s ease-in-out;
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    <div id="root">
+      <div class="loading-container">
+        <div class="spinner"></div>
+      </div>
+    </div>
+  </body>
+</html>

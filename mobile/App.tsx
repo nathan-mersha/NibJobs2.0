@@ -42,7 +42,7 @@ const lightColors = {
   white: '#FFFFFF',
   warmGray: '#6B6B6B',
   lightGray: '#F5F5F5',
-  softBlue: '#4A90E2',
+  softBlue: '#FF8C42',  // Dark orange accent for light theme
   success: '#27AE60',
   danger: '#E74C3C',
   error: '#E74C3C',
@@ -52,8 +52,8 @@ const lightColors = {
   sidebarBg: '#F8FAFC',        // Light gray-blue
   sidebarText: '#475569',      // Slate gray
   sidebarTextActive: '#0F172A', // Dark slate
-  sidebarAccent: '#3B82F6',    // Modern blue
-  sidebarAccentLight: '#EFF6FF', // Light blue
+  sidebarAccent: '#FF8C42',    // Dark orange accent
+  sidebarAccentLight: '#FFF5E6', // Light orange variant
   sidebarBorder: '#E2E8F0',    // Subtle border
   sidebarHover: '#F1F5F9',     // Hover state
 };
@@ -69,7 +69,7 @@ const darkColors = {
   white: '#0F1114',
   warmGray: '#9CA3AF',
   lightGray: '#1F2937',
-  softBlue: '#60A5FA',
+  softBlue: '#FF8C42',  // Dark orange accent for dark theme
   success: '#10B981',
   danger: '#F87171',
   error: '#F87171',
@@ -79,8 +79,8 @@ const darkColors = {
   sidebarBg: '#1F2937',
   sidebarText: '#9CA3AF',
   sidebarTextActive: '#F9FAFB',
-  sidebarAccent: '#60A5FA',
-  sidebarAccentLight: '#1E3A8A',
+  sidebarAccent: '#FF8C42',  // Dark orange accent
+  sidebarAccentLight: '#3A2E28',  // Dark orange light variant
   sidebarBorder: '#374151',
   sidebarHover: '#374151',
 };
@@ -562,107 +562,125 @@ function LoginScreen({ navigation, route }: any) {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.loginContainer}>
-        {/* Header */}
-        <View style={styles.loginHeader}>
-          <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
-          <Text style={styles.loginTitle}>NibJobs</Text>
-          <Text style={styles.loginSubtitle}>Administrator Login</Text>
-        </View>
-        
-        {/* Login Form */}
-        <View style={styles.loginForm}>
-          <View style={styles.inputContainer}>
-            <View style={styles.inputGroup}>
-              <Icon name="email" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                value={email}
-                onChangeText={setEmail}
-                placeholder="Email address"
-                placeholderTextColor={lightColors.warmGray}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
+      <ScrollView 
+        contentContainerStyle={styles.authScrollContainer}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={styles.authContainer}>
+          {/* Header with Gradient Background */}
+          <View style={styles.authHeaderSection}>
+            <View style={styles.authLogoContainer}>
+              <Image source={require('./assets/favicon.png')} style={styles.authLogoImage} />
             </View>
+            <Text style={styles.authTitle}>Welcome Back</Text>
+            <Text style={styles.authSubtitle}>Sign in to continue to NibJobs</Text>
           </View>
-
-          <View style={styles.inputContainer}>
-            <View style={styles.inputGroup}>
-              <Icon name="lock" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-              <TextInput
-                style={styles.modernInput}
-                value={password}
-                onChangeText={setPassword}
-                placeholder="Password"
-                placeholderTextColor={lightColors.warmGray}
-                secureTextEntry
-              />
+          
+          {/* Login Form Card */}
+          <View style={styles.authFormCard}>
+            {/* Email Input */}
+            <View style={styles.floatingInputContainer}>
+              <View style={[styles.floatingInputWrapper, email && styles.floatingInputFocused]}>
+                <Icon name="email" size={20} color={email ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                <View style={styles.floatingInputTextContainer}>
+                  {email ? <Text style={styles.floatingLabel}>Email Address</Text> : null}
+                  <TextInput
+                    style={styles.floatingInput}
+                    value={email}
+                    onChangeText={setEmail}
+                    placeholder={email ? '' : 'Email Address'}
+                    placeholderTextColor={lightColors.warmGray}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              </View>
             </View>
-          </View>
 
-          <TouchableOpacity 
-            style={[styles.modernLoginButton, loading && styles.loginButtonDisabled]} 
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <View style={styles.loadingButtonContent}>
-                <Text style={styles.modernLoginButtonText}>Signing In...</Text>
+            {/* Password Input */}
+            <View style={styles.floatingInputContainer}>
+              <View style={[styles.floatingInputWrapper, password && styles.floatingInputFocused]}>
+                <Icon name="lock" size={20} color={password ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                <View style={styles.floatingInputTextContainer}>
+                  {password ? <Text style={styles.floatingLabel}>Password</Text> : null}
+                  <TextInput
+                    style={styles.floatingInput}
+                    value={password}
+                    onChangeText={setPassword}
+                    placeholder={password ? '' : 'Password'}
+                    placeholderTextColor={lightColors.warmGray}
+                    secureTextEntry
+                  />
+                </View>
               </View>
-            ) : (
-              <View style={styles.buttonContent}>
-                <Text style={styles.modernLoginButtonText}>Sign In</Text>
-                <Icon name="arrow-forward" size={20} color={lightColors.white} />
-              </View>
-            )}
-          </TouchableOpacity>
+            </View>
 
-          {/* Forgot Password Link */}
-          <TouchableOpacity 
-            style={styles.forgotPasswordLink}
-            onPress={() => navigation.navigate('ForgotPassword')}
-          >
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={styles.divider} />
-            <Text style={styles.dividerText}>OR</Text>
-            <View style={styles.divider} />
-          </View>
-
-          {/* Google Sign In Button */}
-          <TouchableOpacity 
-            style={styles.googleButton}
-            onPress={handleGoogleLogin}
-          >
-            <Image 
-              source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
-              style={{ width: 20, height: 20, marginRight: 8 }}
-            />
-            <Text style={styles.googleButtonText}>Sign in with Google</Text>
-          </TouchableOpacity>
-
-          {/* Signup Link */}
-          <View style={styles.signupLinkContainer}>
-            <Text style={styles.signupLinkText}>Don't have an account? </Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-              <Text style={styles.signupLink}>Sign Up</Text>
+            {/* Forgot Password */}
+            <TouchableOpacity 
+              style={styles.forgotPasswordLink}
+              onPress={() => navigation.navigate('ForgotPassword')}
+            >
+              <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
             </TouchableOpacity>
-          </View>
-        </View>
 
-        {/* Footer */}
-        <TouchableOpacity 
-          style={styles.backToHome}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
-          <Text style={styles.backToHomeText}>Back to Home</Text>
-        </TouchableOpacity>
-      </View>
+            {/* Sign In Button */}
+            <TouchableOpacity 
+              style={[styles.authPrimaryButton, loading && styles.authButtonDisabled]} 
+              onPress={handleLogin}
+              disabled={loading}
+            >
+              {loading ? (
+                <View style={styles.authButtonContent}>
+                  <ActivityIndicator size="small" color={lightColors.white} style={{ marginRight: 8 }} />
+                  <Text style={styles.authPrimaryButtonText}>Signing In...</Text>
+                </View>
+              ) : (
+                <View style={styles.authButtonContent}>
+                  <Text style={styles.authPrimaryButtonText}>Sign In</Text>
+                  <Icon name="arrow-forward" size={20} color={lightColors.white} />
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {/* Divider */}
+            <View style={styles.authDivider}>
+              <View style={styles.authDividerLine} />
+              <Text style={styles.authDividerText}>OR CONTINUE WITH</Text>
+              <View style={styles.authDividerLine} />
+            </View>
+
+            {/* Google Sign In Button */}
+            <TouchableOpacity 
+              style={styles.authGoogleButton}
+              onPress={handleGoogleLogin}
+            >
+              <Image 
+                source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
+                style={styles.googleIcon}
+              />
+              <Text style={styles.authGoogleButtonText}>Sign in with Google</Text>
+            </TouchableOpacity>
+
+            {/* Signup Link */}
+            <View style={styles.authFooterLink}>
+              <Text style={styles.authFooterLinkText}>Don't have an account? </Text>
+              <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+                <Text style={styles.authFooterLinkHighlight}>Sign Up</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Back to Home */}
+          <TouchableOpacity 
+            style={styles.authBackButton}
+            onPress={() => navigation.navigate('Home')}
+          >
+            <Icon name="arrow-back" size={18} color={lightColors.warmGray} />
+            <Text style={styles.authBackButtonText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -1202,149 +1220,154 @@ function SignupScreen({ navigation, route }: any) {
           </>
         ) : (
           // Signup Form
-          <>
-            <View style={styles.loginHeader}>
-              <Image source={require('./assets/favicon.png')} style={styles.loginLogoImage} />
-              <Text style={styles.loginTitle}>NibJobs</Text>
-              <Text style={styles.loginSubtitle}>Create Your Account</Text>
+          <View style={styles.authContainer}>
+            <View style={styles.authHeaderSection}>
+              <View style={styles.authLogoContainer}>
+                <Image source={require('./assets/favicon.png')} style={styles.authLogoImage} />
+              </View>
+              <Text style={styles.authTitle}>Create Account</Text>
+              <Text style={styles.authSubtitle}>Join NibJobs and find your dream job</Text>
             </View>
             
             {message && (
-              <View style={{
-                backgroundColor: lightColors.beeYellow,
-                padding: 16,
-                marginHorizontal: 20,
-                marginBottom: 20,
-                borderRadius: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-              }}>
+              <View style={styles.authInfoBanner}>
                 <Icon name="info" size={24} color={lightColors.deepNavy} />
-                <Text style={{
-                  flex: 1,
-                  fontSize: 14,
-                  color: lightColors.deepNavy,
-                  fontFamily: 'Inter-Medium',
-                  lineHeight: 20,
-                }}>
+                <Text style={styles.authInfoBannerText}>
                   {message}
                 </Text>
               </View>
             )}
             
-            <View style={styles.loginForm}>
-              <View style={styles.inputContainer}>
-                <View style={styles.inputGroup}>
-                  <Icon name="person" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    placeholder="Full Name"
-                    placeholderTextColor={lightColors.warmGray}
-                    autoCapitalize="words"
-                  />
+            <View style={styles.authFormCard}>
+              {/* Full Name Input */}
+              <View style={styles.floatingInputContainer}>
+                <View style={[styles.floatingInputWrapper, fullName && styles.floatingInputFocused]}>
+                  <Icon name="person" size={20} color={fullName ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                  <View style={styles.floatingInputTextContainer}>
+                    {fullName ? <Text style={styles.floatingLabel}>Full Name</Text> : null}
+                    <TextInput
+                      style={styles.floatingInput}
+                      value={fullName}
+                      onChangeText={setFullName}
+                      placeholder={fullName ? '' : 'Full Name'}
+                      placeholderTextColor={lightColors.warmGray}
+                      autoCapitalize="words"
+                    />
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <View style={styles.inputGroup}>
-                  <Icon name="email" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    value={email}
-                    onChangeText={setEmail}
-                    placeholder="Email address"
-                    placeholderTextColor={lightColors.warmGray}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                  />
+              {/* Email Input */}
+              <View style={styles.floatingInputContainer}>
+                <View style={[styles.floatingInputWrapper, email && styles.floatingInputFocused]}>
+                  <Icon name="email" size={20} color={email ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                  <View style={styles.floatingInputTextContainer}>
+                    {email ? <Text style={styles.floatingLabel}>Email Address</Text> : null}
+                    <TextInput
+                      style={styles.floatingInput}
+                      value={email}
+                      onChangeText={setEmail}
+                      placeholder={email ? '' : 'Email Address'}
+                      placeholderTextColor={lightColors.warmGray}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <View style={styles.inputGroup}>
-                  <Icon name="lock" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    value={password}
-                    onChangeText={setPassword}
-                    placeholder="Password (min 6 characters)"
-                    placeholderTextColor={lightColors.warmGray}
-                    secureTextEntry
-                  />
+              {/* Password Input */}
+              <View style={styles.floatingInputContainer}>
+                <View style={[styles.floatingInputWrapper, password && styles.floatingInputFocused]}>
+                  <Icon name="lock" size={20} color={password ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                  <View style={styles.floatingInputTextContainer}>
+                    {password ? <Text style={styles.floatingLabel}>Password</Text> : null}
+                    <TextInput
+                      style={styles.floatingInput}
+                      value={password}
+                      onChangeText={setPassword}
+                      placeholder={password ? '' : 'Password (min 6 characters)'}
+                      placeholderTextColor={lightColors.warmGray}
+                      secureTextEntry
+                    />
+                  </View>
                 </View>
               </View>
 
-              <View style={styles.inputContainer}>
-                <View style={styles.inputGroup}>
-                  <Icon name="lock-outline" size={20} color={lightColors.warmGray} style={styles.inputIcon} />
-                  <TextInput
-                    style={styles.modernInput}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    placeholder="Confirm Password"
-                    placeholderTextColor={lightColors.warmGray}
-                    secureTextEntry
-                  />
+              {/* Confirm Password Input */}
+              <View style={styles.floatingInputContainer}>
+                <View style={[styles.floatingInputWrapper, confirmPassword && styles.floatingInputFocused]}>
+                  <Icon name="lock-outline" size={20} color={confirmPassword ? lightColors.beeYellow : lightColors.warmGray} style={styles.floatingInputIcon} />
+                  <View style={styles.floatingInputTextContainer}>
+                    {confirmPassword ? <Text style={styles.floatingLabel}>Confirm Password</Text> : null}
+                    <TextInput
+                      style={styles.floatingInput}
+                      value={confirmPassword}
+                      onChangeText={setConfirmPassword}
+                      placeholder={confirmPassword ? '' : 'Confirm Password'}
+                      placeholderTextColor={lightColors.warmGray}
+                      secureTextEntry
+                    />
+                  </View>
                 </View>
               </View>
 
+              {/* Sign Up Button */}
               <TouchableOpacity 
-                style={[styles.modernLoginButton, loading && styles.loginButtonDisabled]} 
+                style={[styles.authPrimaryButton, loading && styles.authButtonDisabled]} 
                 onPress={handleSignup}
                 disabled={loading}
               >
                 {loading ? (
-                  <View style={styles.loadingButtonContent}>
-                    <Text style={styles.modernLoginButtonText}>Creating Account...</Text>
+                  <View style={styles.authButtonContent}>
+                    <ActivityIndicator size="small" color={lightColors.white} style={{ marginRight: 8 }} />
+                    <Text style={styles.authPrimaryButtonText}>Creating Account...</Text>
                   </View>
                 ) : (
-                  <View style={styles.buttonContent}>
-                    <Text style={styles.modernLoginButtonText}>Sign Up</Text>
-                    <Icon name="arrow-forward" size={20} color={lightColors.deepNavy} />
+                  <View style={styles.authButtonContent}>
+                    <Text style={styles.authPrimaryButtonText}>Sign Up</Text>
+                    <Icon name="arrow-forward" size={20} color={lightColors.white} />
                   </View>
                 )}
               </TouchableOpacity>
 
               {/* Divider */}
-              <View style={styles.dividerContainer}>
-                <View style={styles.divider} />
-                <Text style={styles.dividerText}>OR</Text>
-                <View style={styles.divider} />
+              <View style={styles.authDivider}>
+                <View style={styles.authDividerLine} />
+                <Text style={styles.authDividerText}>OR CONTINUE WITH</Text>
+                <View style={styles.authDividerLine} />
               </View>
 
-              {/* Google Sign In Button */}
+              {/* Google Sign Up Button */}
               <TouchableOpacity 
-                style={styles.googleButton}
+                style={styles.authGoogleButton}
                 onPress={handleGoogleSignup}
               >
                 <Image 
                   source={{ uri: 'https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg' }}
-                  style={{ width: 20, height: 20, marginRight: 8 }}
+                  style={styles.googleIcon}
                 />
-                <Text style={styles.googleButtonText}>Sign up with Google</Text>
+                <Text style={styles.authGoogleButtonText}>Sign up with Google</Text>
               </TouchableOpacity>
 
               {/* Login Link */}
-              <View style={styles.signupLinkContainer}>
-                <Text style={styles.signupLinkText}>Already have an account? </Text>
+              <View style={styles.authFooterLink}>
+                <Text style={styles.authFooterLinkText}>Already have an account? </Text>
                 <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-                  <Text style={styles.signupLink}>Log In</Text>
+                  <Text style={styles.authFooterLinkHighlight}>Log In</Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Footer */}
+            {/* Back to Home */}
             <TouchableOpacity 
-              style={styles.backToHome}
+              style={styles.authBackButton}
               onPress={() => navigation.navigate('Home')}
             >
-              <Icon name="arrow-back" size={16} color={lightColors.softBlue} />
-              <Text style={styles.backToHomeText}>Back to Home</Text>
+              <Icon name="arrow-back" size={18} color={lightColors.warmGray} />
+              <Text style={styles.authBackButtonText}>Back to Home</Text>
             </TouchableOpacity>
-          </>
+          </View>
         )}
       </ScrollView>
     </SafeAreaView>
@@ -3747,13 +3770,16 @@ function CompaniesScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
       // Apply all filters in memory
       let filteredDocs = snapshot.docs;
       
-      // Filter by verification status (default to approved if no filter selected)
-      const verificationFilter = selectedVerification || 'approved';
-      filteredDocs = filteredDocs.filter(doc => {
-        const data = doc.data();
-        return data.companyProfile?.verificationStatus === verificationFilter;
-      });
-      console.log(`✅ Companies with status '${verificationFilter}':`, filteredDocs.length);
+      // Filter by verification status (if a filter is selected)
+      if (selectedVerification) {
+        filteredDocs = filteredDocs.filter(doc => {
+          const data = doc.data();
+          return data.companyProfile?.verificationStatus === selectedVerification;
+        });
+        console.log(`✅ Companies with status '${selectedVerification}':`, filteredDocs.length);
+      } else {
+        console.log(`✅ Showing all companies (no verification filter):`, filteredDocs.length);
+      }
       
       // Filter by industry
       if (selectedIndustry) {
@@ -3841,12 +3867,15 @@ function CompaniesScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
       // Apply all filters in memory
       let filteredCompanies = companiesData;
       
-      // Filter by verification status (default to approved if no filter selected)
-      const verificationFilter = selectedVerification || 'approved';
-      filteredCompanies = filteredCompanies.filter((company: any) => {
-        return company.companyProfile?.verificationStatus === verificationFilter;
-      });
-      console.log(`📊 After verification filter (${verificationFilter}):`, filteredCompanies.length);
+      // Filter by verification status (if a filter is selected)
+      if (selectedVerification) {
+        filteredCompanies = filteredCompanies.filter((company: any) => {
+          return company.companyProfile?.verificationStatus === selectedVerification;
+        });
+        console.log(`📊 After verification filter (${selectedVerification}):`, filteredCompanies.length);
+      } else {
+        console.log(`📊 Showing all companies (no verification filter):`, filteredCompanies.length);
+      }
       
       // Filter by industry
       if (selectedIndustry) {
@@ -4502,8 +4531,7 @@ function CompaniesScreen({ navigation, route, isDarkMode, toggleTheme }: any) {
                   {[
                     { label: 'All Status', value: '', icon: 'business' },
                     { label: 'Verified', value: 'approved', icon: 'verified' },
-                    { label: 'Pending', value: 'pending', icon: 'pending' },
-                    { label: 'Rejected', value: 'rejected', icon: 'cancel' }
+                    { label: 'Pending', value: 'pending', icon: 'pending' }
                   ].map((status) => (
                     <TouchableOpacity
                       key={status.value}
@@ -10166,17 +10194,667 @@ function CompanyStatisticsContent({ colors, companyData }: any) {
 
 // Company Posted Jobs Content
 function CompanyPostedJobsContent({ colors, companyId }: any) {
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingJob, setEditingJob] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [companyData, setCompanyData] = useState<any>(null);
+  
+  // Form fields
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [contractType, setContractType] = useState('Full-time');
+  const [location, setLocation] = useState('');
+  const [salary, setSalary] = useState('');
+  const [description, setDescription] = useState('');
+  const [requirements, setRequirements] = useState('');
+  const [responsibilities, setResponsibilities] = useState('');
+  const [isRemote, setIsRemote] = useState(false);
+  const [tags, setTags] = useState<string[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [availableTags, setAvailableTags] = useState<string[]>([]);
+
+  useEffect(() => {
+    loadCompanyData();
+    loadJobs();
+    loadCategories();
+  }, [companyId]);
+
+  useEffect(() => {
+    // Update available tags when category changes
+    if (category) {
+      const selectedCategory = categories.find(cat => cat.name === category);
+      if (selectedCategory && selectedCategory.tags) {
+        setAvailableTags(selectedCategory.tags);
+      } else {
+        setAvailableTags([]);
+      }
+    } else {
+      setAvailableTags([]);
+    }
+  }, [category, categories]);
+
+  const loadCategories = async () => {
+    try {
+      const categoriesQuery = collection(db, 'categories');
+      const snapshot = await getDocs(categoriesQuery);
+      const categoriesData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setCategories(categoriesData);
+    } catch (error) {
+      console.error('Error loading categories:', error);
+    }
+  };
+
+  const loadCompanyData = async () => {
+    try {
+      if (!companyId) return;
+      const userDoc = await getDoc(doc(db, 'users', companyId));
+      if (userDoc.exists()) {
+        setCompanyData(userDoc.data());
+      }
+    } catch (error) {
+      console.error('Error loading company data:', error);
+    }
+  };
+
+  const loadJobs = async () => {
+    try {
+      setLoading(true);
+      const jobsQuery = dbQuery(
+        collection(db, 'jobs'),
+        where('companyId', '==', companyId),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(jobsQuery);
+      const jobsData = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setJobs(jobsData);
+    } catch (error) {
+      console.error('Error loading jobs:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCreateModal = () => {
+    resetForm();
+    setEditingJob(null);
+    setShowCreateModal(true);
+  };
+
+  const openEditModal = (job: any) => {
+    setEditingJob(job);
+    setTitle(job.title || '');
+    setCategory(job.category || '');
+    setContractType(job.contractType || 'Full-time');
+    setLocation(job.location || '');
+    setSalary(job.salary || '');
+    setDescription(job.description || '');
+    setRequirements(job.requirements || '');
+    setResponsibilities(job.responsibilities || '');
+    setIsRemote(job.isRemote || false);
+    setTags(job.tags || []);
+    setShowCreateModal(true);
+  };
+
+  const resetForm = () => {
+    setTitle('');
+    setCategory('');
+    setContractType('Full-time');
+    setLocation('');
+    setSalary('');
+    setDescription('');
+    setRequirements('');
+    setResponsibilities('');
+    setIsRemote(false);
+    setTags([]);
+  };
+
+  const handleSubmit = async () => {
+    if (!title || !category || !location) {
+      Alert.alert('Error', 'Please fill in all required fields (Title, Category, Location)');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const jobData = {
+        title,
+        company: companyData?.companyProfile?.companyName || 'Unknown Company',
+        companyId,
+        category,
+        contractType,
+        location,
+        salary,
+        description,
+        requirements,
+        responsibilities,
+        isRemote,
+        tags: tags,
+        jobSource: 'company',
+        postedDate: new Date(),
+        createdAt: editingJob ? editingJob.createdAt : new Date(),
+        updatedAt: new Date()
+      };
+
+      if (editingJob) {
+        // Update existing job
+        await updateDoc(doc(db, 'jobs', editingJob.id), jobData);
+        Alert.alert('Success', 'Job updated successfully!');
+      } else {
+        // Create new job
+        await addDoc(collection(db, 'jobs'), jobData);
+        Alert.alert('Success', 'Job posted successfully!');
+      }
+
+      setShowCreateModal(false);
+      resetForm();
+      loadJobs();
+    } catch (error) {
+      console.error('Error saving job:', error);
+      Alert.alert('Error', 'Failed to save job. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (jobId: string) => {
+    if (typeof window !== 'undefined') {
+      if (!window.confirm('Are you sure you want to delete this job posting?')) {
+        return;
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, 'jobs', jobId), {
+        deleted: true,
+        deletedAt: new Date()
+      });
+      Alert.alert('Success', 'Job deleted successfully!');
+      loadJobs();
+    } catch (error) {
+      console.error('Error deleting job:', error);
+      Alert.alert('Error', 'Failed to delete job. Please try again.');
+    }
+  };
+
+  const categoryNames = categories.map(cat => cat.name).filter(Boolean);
+  const fallbackCategories = [
+    'Technology', 'Finance', 'Healthcare', 'Education', 'Retail', 'Manufacturing',
+    'Construction', 'Agriculture', 'Transportation', 'Hospitality', 'Real Estate',
+    'Media & Entertainment', 'Consulting', 'Marketing', 'Sales', 'Customer Service', 'Other'
+  ];
+  const categoryOptions = categoryNames.length > 0 ? categoryNames : fallbackCategories;
+
+  const contractTypes = ['Full-time', 'Part-time', 'Contract', 'Temporary', 'Internship', 'Freelance'];
+
   return (
     <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
       <View style={styles.contentHeader}>
-        <Icon name="work" size={24} color={colors.beeYellow} />
-        <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Posted Jobs</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Icon name="work" size={24} color={colors.beeYellow} />
+          <Text style={[styles.contentTitle, { color: colors.deepNavy }]}>Posted Jobs</Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.addButton, { backgroundColor: colors.beeYellow }]}
+          onPress={openCreateModal}
+        >
+          <Icon name="add" size={20} color={colors.deepNavy} />
+          <Text style={[styles.addButtonText, { color: colors.deepNavy }]}>Post New Job</Text>
+        </TouchableOpacity>
       </View>
-      <View style={{ padding: 20 }}>
-        <Text style={{ fontSize: 16, fontFamily: fonts.regular, color: colors.warmGray, textAlign: 'center', marginTop: 100 }}>
-          No jobs posted yet. Create your first job posting to attract talented candidates!
-        </Text>
-      </View>
+
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.beeYellow} />
+          <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading jobs...</Text>
+        </View>
+      ) : jobs.length === 0 ? (
+        <View style={{ padding: 20 }}>
+          <Text style={{ fontSize: 16, fontFamily: fonts.regular, color: colors.warmGray, textAlign: 'center', marginTop: 100 }}>
+            No jobs posted yet. Create your first job posting to attract talented candidates!
+          </Text>
+        </View>
+      ) : (
+        <ScrollView style={{ padding: 20 }}>
+          {jobs.map((job) => (
+            <View
+              key={job.id}
+              style={[
+                styles.jobCard,
+                { backgroundColor: colors.white, borderColor: colors.lightGray }
+              ]}
+            >
+              <View style={styles.jobCardHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.jobCardTitle, { color: colors.deepNavy }]}>{job.title}</Text>
+                  <View style={styles.jobCardMeta}>
+                    <Icon name="category" size={14} color={colors.warmGray} />
+                    <Text style={[styles.jobCardMetaText, { color: colors.warmGray }]}>{job.category}</Text>
+                    <Icon name="work" size={14} color={colors.warmGray} style={{ marginLeft: 12 }} />
+                    <Text style={[styles.jobCardMetaText, { color: colors.warmGray }]}>{job.contractType}</Text>
+                    <Icon name="location-on" size={14} color={colors.warmGray} style={{ marginLeft: 12 }} />
+                    <Text style={[styles.jobCardMetaText, { color: colors.warmGray }]}>{job.location}</Text>
+                  </View>
+                </View>
+                <View style={styles.jobCardActions}>
+                  <TouchableOpacity
+                    style={[styles.iconButton, { backgroundColor: colors.lightGray }]}
+                    onPress={() => openEditModal(job)}
+                  >
+                    <Icon name="edit" size={18} color={colors.deepNavy} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.iconButton, { backgroundColor: colors.danger }]}
+                    onPress={() => handleDelete(job.id)}
+                  >
+                    <Icon name="delete" size={18} color={colors.white} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+              {job.salary && (
+                <Text style={[styles.jobCardSalary, { color: colors.beeYellow }]}>
+                  💰 {job.salary}
+                </Text>
+              )}
+              {job.description && (
+                <Text style={[styles.jobCardDescription, { color: colors.warmGray }]} numberOfLines={2}>
+                  {job.description}
+                </Text>
+              )}
+              <View style={styles.jobCardFooter}>
+                {job.isRemote && (
+                  <View style={[styles.jobTag, { backgroundColor: colors.softBlue + '20', borderColor: colors.softBlue }]}>
+                    <Icon name="computer" size={12} color={colors.softBlue} />
+                    <Text style={[styles.jobTagText, { color: colors.softBlue }]}>Remote</Text>
+                  </View>
+                )}
+                <Text style={[styles.jobCardDate, { color: colors.warmGray }]}>
+                  Posted {job.createdAt?.toDate ? new Date(job.createdAt.toDate()).toLocaleDateString() : 'Recently'}
+                </Text>
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* Create/Edit Job Modal - Revamped Modern Design */}
+      <Modal
+        visible={showCreateModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowCreateModal(false)}
+      >
+        <View style={styles.jobModalOverlay}>
+          <View style={[styles.jobModalContainer, { backgroundColor: colors.lightGray }]}>
+            {/* Header */}
+            <View style={[styles.jobModalHeader, { backgroundColor: colors.white }]}>
+              <View style={styles.jobModalHeaderContent}>
+                <View style={[styles.jobModalIconCircle, { backgroundColor: colors.beeYellow + '20' }]}>
+                  <Icon name={editingJob ? "edit" : "work"} size={24} color={colors.beeYellow} />
+                </View>
+                <View style={styles.jobModalHeaderText}>
+                  <Text style={[styles.jobModalTitle, { color: colors.deepNavy }]}>
+                    {editingJob ? 'Edit Job Posting' : 'Create New Job'}
+                  </Text>
+                  <Text style={[styles.jobModalSubtitle, { color: colors.warmGray }]}>
+                    {editingJob ? 'Update your job posting details' : 'Fill in the details to post a new job opening'}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity 
+                onPress={() => setShowCreateModal(false)}
+                style={[styles.jobModalCloseButton, { backgroundColor: colors.lightGray }]}
+              >
+                <Icon name="close" size={20} color={colors.deepNavy} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Scrollable Form */}
+            <ScrollView 
+              style={styles.jobModalScrollView}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.jobModalBody}>
+                {/* Basic Information Section */}
+                <View style={[styles.jobFormSection, { backgroundColor: colors.white }]}>
+                  <View style={styles.jobFormSectionHeader}>
+                    <Icon name="info" size={20} color={colors.beeYellow} />
+                    <Text style={[styles.jobFormSectionTitle, { color: colors.deepNavy }]}>
+                      Basic Information
+                    </Text>
+                  </View>
+
+                  {/* Job Title */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Job Title <Text style={{ color: colors.danger }}>*</Text>
+                    </Text>
+                    <View style={[styles.jobInputWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                      <Icon name="work-outline" size={18} color={colors.warmGray} />
+                      <TextInput
+                        style={[styles.jobFormInput, { color: colors.deepNavy }]}
+                        placeholder="e.g. Senior Software Engineer"
+                        placeholderTextColor={colors.warmGray}
+                        value={title}
+                        onChangeText={setTitle}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Category & Contract Type Row */}
+                  <View style={styles.jobFormRow}>
+                    <View style={[styles.jobFormField, { flex: 1, marginRight: 12 }]}>
+                      <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                        Category <Text style={{ color: colors.danger }}>*</Text>
+                      </Text>
+                      <View style={[styles.jobSelectWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                        <Icon name="category" size={18} color={colors.warmGray} />
+                        <select
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '12px 8px',
+                            border: 'none',
+                            outline: 'none',
+                            backgroundColor: colors.white,
+                            color: colors.deepNavy,
+                            fontSize: '15px',
+                            fontFamily: fonts.regular,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          <option value="" style={{ backgroundColor: colors.white, color: colors.deepNavy }}>Select category</option>
+                          {categoryOptions.map(cat => (
+                            <option key={cat} value={cat} style={{ backgroundColor: colors.white, color: colors.deepNavy }}>{cat}</option>
+                          ))}
+                        </select>
+                      </View>
+                    </View>
+
+                    <View style={[styles.jobFormField, { flex: 1 }]}>
+                      <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                        Contract Type
+                      </Text>
+                      <View style={[styles.jobSelectWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                        <Icon name="schedule" size={18} color={colors.warmGray} />
+                        <select
+                          value={contractType}
+                          onChange={(e) => setContractType(e.target.value)}
+                          style={{
+                            flex: 1,
+                            padding: '12px 8px',
+                            border: 'none',
+                            outline: 'none',
+                            backgroundColor: colors.white,
+                            color: colors.deepNavy,
+                            fontSize: '15px',
+                            fontFamily: fonts.regular,
+                            cursor: 'pointer'
+                          }}
+                        >
+                          {contractTypes.map(type => (
+                            <option key={type} value={type} style={{ backgroundColor: colors.white, color: colors.deepNavy }}>{type}</option>
+                          ))}
+                        </select>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Location & Compensation Section */}
+                <View style={[styles.jobFormSection, { backgroundColor: colors.white }]}>
+                  <View style={styles.jobFormSectionHeader}>
+                    <Icon name="place" size={20} color={colors.beeYellow} />
+                    <Text style={[styles.jobFormSectionTitle, { color: colors.deepNavy }]}>
+                      Location & Compensation
+                    </Text>
+                  </View>
+
+                  {/* Location */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Location <Text style={{ color: colors.danger }}>*</Text>
+                    </Text>
+                    <View style={[styles.jobInputWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                      <Icon name="location-on" size={18} color={colors.warmGray} />
+                      <TextInput
+                        style={[styles.jobFormInput, { color: colors.deepNavy }]}
+                        placeholder="e.g. Addis Ababa, Ethiopia"
+                        placeholderTextColor={colors.warmGray}
+                        value={location}
+                        onChangeText={setLocation}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Remote Work Toggle */}
+                  <View style={[styles.jobFormToggle, { backgroundColor: colors.cream }]}>
+                    <View style={styles.jobFormToggleLeft}>
+                      <Icon name="laptop" size={20} color={colors.deepNavy} />
+                      <View>
+                        <Text style={[styles.jobFormToggleLabel, { color: colors.deepNavy }]}>
+                          Remote Work Available
+                        </Text>
+                        <Text style={[styles.jobFormToggleHint, { color: colors.warmGray }]}>
+                          Allow employees to work remotely
+                        </Text>
+                      </View>
+                    </View>
+                    <Switch
+                      value={isRemote}
+                      onValueChange={setIsRemote}
+                      trackColor={{ false: colors.lightGray, true: colors.beeYellow }}
+                      thumbColor={colors.white}
+                    />
+                  </View>
+
+                  {/* Salary Range */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Monthly Salary (Birr)
+                    </Text>
+                    <View style={[styles.jobInputWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                      <Icon name="attach-money" size={18} color={colors.warmGray} />
+                      <TextInput
+                        style={[styles.jobFormInput, { color: colors.deepNavy }]}
+                        placeholder="e.g., 15,000 - 25,000 Birr per month"
+                        placeholderTextColor={colors.warmGray}
+                        value={salary}
+                        onChangeText={setSalary}
+                      />
+                    </View>
+                  </View>
+                </View>
+
+                {/* Job Details Section */}
+                <View style={[styles.jobFormSection, { backgroundColor: colors.white }]}>
+                  <View style={styles.jobFormSectionHeader}>
+                    <Icon name="description" size={20} color={colors.beeYellow} />
+                    <Text style={[styles.jobFormSectionTitle, { color: colors.deepNavy }]}>
+                      Job Details
+                    </Text>
+                  </View>
+
+                  {/* Description */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Job Description
+                    </Text>
+                    <Text style={[styles.jobFormHint, { color: colors.warmGray }]}>
+                      Describe the role, responsibilities, and what makes this opportunity unique
+                    </Text>
+                    <TextInput
+                      style={[styles.jobFormTextArea, { borderColor: colors.lightGray, backgroundColor: colors.white, color: colors.deepNavy }]}
+                      placeholder="Enter a detailed description of the job role..."
+                      placeholderTextColor={colors.warmGray}
+                      value={description}
+                      onChangeText={setDescription}
+                      multiline
+                      numberOfLines={5}
+                      textAlignVertical="top"
+                    />
+                  </View>
+
+                  {/* Requirements */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Requirements
+                    </Text>
+                    <Text style={[styles.jobFormHint, { color: colors.warmGray }]}>
+                      List required skills, qualifications, and experience
+                    </Text>
+                    <TextInput
+                      style={[styles.jobFormTextArea, { borderColor: colors.lightGray, backgroundColor: colors.white, color: colors.deepNavy }]}
+                      placeholder="• Bachelor's degree in relevant field&#10;• 3+ years of experience&#10;• Strong communication skills"
+                      placeholderTextColor={colors.warmGray}
+                      value={requirements}
+                      onChangeText={setRequirements}
+                      multiline
+                      numberOfLines={5}
+                      textAlignVertical="top"
+                    />
+                  </View>
+
+                  {/* Responsibilities */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Key Responsibilities
+                    </Text>
+                    <Text style={[styles.jobFormHint, { color: colors.warmGray }]}>
+                      Outline the main duties and day-to-day tasks
+                    </Text>
+                    <TextInput
+                      style={[styles.jobFormTextArea, { borderColor: colors.lightGray, backgroundColor: colors.white, color: colors.deepNavy }]}
+                      placeholder="• Lead development projects&#10;• Collaborate with team members&#10;• Mentor junior developers"
+                      placeholderTextColor={colors.warmGray}
+                      value={responsibilities}
+                      onChangeText={setResponsibilities}
+                      multiline
+                      numberOfLines={5}
+                      textAlignVertical="top"
+                    />
+                  </View>
+
+                  {/* Tags */}
+                  <View style={styles.jobFormField}>
+                    <Text style={[styles.jobFormLabel, { color: colors.deepNavy }]}>
+                      Skills & Tags
+                    </Text>
+                    <Text style={[styles.jobFormHint, { color: colors.warmGray }]}>
+                      {category ? `Select relevant skills for ${category}` : 'Please select a category first'}
+                    </Text>
+                    {availableTags.length > 0 ? (
+                      <ScrollView 
+                        style={styles.tagsScrollContainer}
+                        contentContainerStyle={styles.tagsSelectionContainer}
+                        showsVerticalScrollIndicator={true}
+                      >
+                        {availableTags.map((tag, index) => {
+                          const isSelected = tags.includes(tag);
+                          return (
+                            <TouchableOpacity
+                              key={index}
+                              style={[
+                                styles.tagSelectionButton,
+                                { 
+                                  backgroundColor: isSelected ? colors.beeYellow : colors.white,
+                                  borderColor: isSelected ? colors.beeYellow : colors.lightGray
+                                }
+                              ]}
+                              onPress={() => {
+                                if (isSelected) {
+                                  setTags(tags.filter(t => t !== tag));
+                                } else {
+                                  setTags([...tags, tag]);
+                                }
+                              }}
+                            >
+                              <Text style={[
+                                styles.tagSelectionText,
+                                { color: isSelected ? colors.deepNavy : colors.warmGray }
+                              ]}>
+                                {tag}
+                              </Text>
+                              {isSelected && (
+                                <Icon name="check" size={14} color={colors.deepNavy} />
+                              )}
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : (
+                      <View style={[styles.emptyTagsMessage, { backgroundColor: colors.lightGray }]}>
+                        <Icon name="info" size={20} color={colors.warmGray} />
+                        <Text style={[styles.emptyTagsText, { color: colors.warmGray }]}>
+                          {category ? 'No tags available for this category' : 'Select a category to see available tags'}
+                        </Text>
+                      </View>
+                    )}
+                    {tags.length > 0 && (
+                      <View style={styles.selectedTagsContainer}>
+                        <Text style={[styles.selectedTagsLabel, { color: colors.warmGray }]}>
+                          Selected ({tags.length}):
+                        </Text>
+                        <View style={styles.selectedTagsWrapper}>
+                          {tags.map((tag, index) => (
+                            <View 
+                              key={index}
+                              style={[styles.selectedTag, { backgroundColor: colors.beeYellow }]}
+                            >
+                              <Text style={[styles.selectedTagText, { color: colors.deepNavy }]}>
+                                {tag}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                </View>
+              </View>
+            </ScrollView>
+
+            {/* Footer Actions */}
+            <View style={[styles.jobModalFooter, { backgroundColor: colors.white, borderTopColor: colors.lightGray }]}>
+              <TouchableOpacity
+                style={[styles.jobModalSecondaryButton, { borderColor: colors.lightGray }]}
+                onPress={() => setShowCreateModal(false)}
+                disabled={saving}
+              >
+                <Icon name="close" size={18} color={colors.warmGray} />
+                <Text style={[styles.jobModalSecondaryButtonText, { color: colors.warmGray }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                style={[styles.jobModalPrimaryButton, { backgroundColor: colors.beeYellow }]}
+                onPress={handleSubmit}
+                disabled={saving}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color={colors.deepNavy} />
+                ) : (
+                  <>
+                    <Icon name={editingJob ? "check" : "add"} size={18} color={colors.deepNavy} />
+                    <Text style={[styles.jobModalPrimaryButtonText, { color: colors.deepNavy }]}>
+                      {editingJob ? 'Update Job' : 'Post Job'}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -10820,6 +11498,9 @@ function CategoriesContent({ colors = lightColors }: { colors?: any }) {
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  const [editingTags, setEditingTags] = useState<string | null>(null);
+  const [newTag, setNewTag] = useState('');
+  const [savingTags, setSavingTags] = useState(false);
 
   const getIconFromEmoji = (emoji: string): string => {
     const emojiIconMap: { [key: string]: string } = {
@@ -10902,6 +11583,80 @@ function CategoriesContent({ colors = lightColors }: { colors?: any }) {
     }
   };
 
+  const handleAddTag = async (categoryId: string) => {
+    if (!newTag.trim()) return;
+
+    try {
+      setSavingTags(true);
+      const categoryRef = doc(db, 'categories', categoryId);
+      const categoryDoc = await getDoc(categoryRef);
+      
+      if (categoryDoc.exists()) {
+        const currentTags = categoryDoc.data().tags || [];
+        
+        // Split by comma and trim each tag
+        const newTags = newTag
+          .split(',')
+          .map(tag => tag.trim())
+          .filter(tag => tag.length > 0)
+          .filter(tag => !currentTags.includes(tag)); // Avoid duplicates
+        
+        if (newTags.length === 0) {
+          Alert.alert('Info', 'All tags already exist or input is empty');
+          setSavingTags(false);
+          return;
+        }
+        
+        const updatedTags = [...currentTags, ...newTags];
+        
+        await updateDoc(categoryRef, { tags: updatedTags });
+        
+        // Update local state
+        setCategories(prev => prev.map(cat => 
+          cat.id === categoryId ? { ...cat, tags: updatedTags } : cat
+        ));
+        
+        setNewTag('');
+        const message = newTags.length === 1 
+          ? 'Tag added successfully!' 
+          : `${newTags.length} tags added successfully!`;
+        Alert.alert('Success', message);
+      }
+    } catch (error) {
+      console.error('Error adding tag:', error);
+      Alert.alert('Error', 'Failed to add tag');
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
+  const handleRemoveTag = async (categoryId: string, tagToRemove: string) => {
+    try {
+      setSavingTags(true);
+      const categoryRef = doc(db, 'categories', categoryId);
+      const categoryDoc = await getDoc(categoryRef);
+      
+      if (categoryDoc.exists()) {
+        const currentTags = categoryDoc.data().tags || [];
+        const updatedTags = currentTags.filter((tag: string) => tag !== tagToRemove);
+        
+        await updateDoc(categoryRef, { tags: updatedTags });
+        
+        // Update local state
+        setCategories(prev => prev.map(cat => 
+          cat.id === categoryId ? { ...cat, tags: updatedTags } : cat
+        ));
+        
+        Alert.alert('Success', 'Tag removed successfully!');
+      }
+    } catch (error) {
+      console.error('Error removing tag:', error);
+      Alert.alert('Error', 'Failed to remove tag');
+    } finally {
+      setSavingTags(false);
+    }
+  };
+
   return (
     <View style={[styles.contentContainer, { backgroundColor: colors.lightGray }]}>
       <View style={styles.contentHeader}>
@@ -10915,7 +11670,11 @@ function CategoriesContent({ colors = lightColors }: { colors?: any }) {
           <Text style={[styles.loadingText, { color: colors.warmGray }]}>Loading categories...</Text>
         </View>
       ) : (
-        <View style={styles.listContainer}>
+        <ScrollView 
+          style={styles.listContainer}
+          contentContainerStyle={styles.listContentContainer}
+          showsVerticalScrollIndicator={true}
+        >
           {categories.length === 0 ? (
             <View style={[styles.emptyContainer, { backgroundColor: colors.white }]}>
               <Icon name="category" size={48} color={colors.warmGray} />
@@ -10950,7 +11709,37 @@ function CategoriesContent({ colors = lightColors }: { colors?: any }) {
                           {category.jobCount || 0} jobs • {category.path}
                           {hasSubcategories && ` • ${subcategories.length} subcategories`}
                         </Text>
+                        
+                        {/* Tags Display */}
+                        {category.tags && category.tags.length > 0 && (
+                          <View style={styles.categoryTagsContainer}>
+                            <Text style={[styles.categoryTagsLabel, { color: colors.warmGray }]}>
+                              Tags ({category.tags.length}):
+                            </Text>
+                            <View style={styles.categoryTagsWrapper}>
+                              {category.tags.slice(0, 5).map((tag: string, idx: number) => (
+                                <View key={idx} style={[styles.categoryTag, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+                                  <Text style={[styles.categoryTagText, { color: colors.deepNavy }]}>{tag}</Text>
+                                </View>
+                              ))}
+                              {category.tags.length > 5 && (
+                                <Text style={[styles.categoryTagMore, { color: colors.warmGray }]}>
+                                  +{category.tags.length - 5} more
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        )}
                       </View>
+                      <TouchableOpacity
+                        style={[styles.editTagsButton, { backgroundColor: colors.beeYellow }]}
+                        onPress={() => setEditingTags(editingTags === category.id ? null : category.id)}
+                      >
+                        <Icon name={editingTags === category.id ? "close" : "edit"} size={18} color={colors.deepNavy} />
+                        <Text style={[styles.editTagsButtonText, { color: colors.deepNavy }]}>
+                          {editingTags === category.id ? "Close" : "Edit Tags"}
+                        </Text>
+                      </TouchableOpacity>
                       {hasSubcategories && (
                         <Icon 
                           name={isExpanded ? 'keyboard-arrow-up' : 'keyboard-arrow-down'} 
@@ -10961,37 +11750,210 @@ function CategoriesContent({ colors = lightColors }: { colors?: any }) {
                       )}
                     </TouchableOpacity>
                     
+                    {/* Tag Editor */}
+                    {editingTags === category.id && (
+                      <View style={[styles.tagEditorContainer, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+                        <Text style={[styles.tagEditorTitle, { color: colors.deepNavy }]}>
+                          Manage Tags for {category.name}
+                        </Text>
+                        
+                        {/* Add New Tag */}
+                        <View style={styles.addTagSection}>
+                          <View style={[styles.addTagInputWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                            <Icon name="add" size={20} color={colors.warmGray} />
+                            <TextInput
+                              style={[styles.addTagInput, { color: colors.deepNavy }]}
+                              placeholder="Enter new tag..."
+                              placeholderTextColor={colors.warmGray}
+                              value={newTag}
+                              onChangeText={setNewTag}
+                              onSubmitEditing={() => handleAddTag(category.id)}
+                            />
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.addTagButton, { backgroundColor: colors.beeYellow }]}
+                            onPress={() => handleAddTag(category.id)}
+                            disabled={!newTag.trim() || savingTags}
+                          >
+                            {savingTags ? (
+                              <ActivityIndicator size="small" color={colors.deepNavy} />
+                            ) : (
+                              <>
+                                <Icon name="add" size={18} color={colors.deepNavy} />
+                                <Text style={[styles.addTagButtonText, { color: colors.deepNavy }]}>Add</Text>
+                              </>
+                            )}
+                          </TouchableOpacity>
+                        </View>
+                        
+                        {/* Existing Tags */}
+                        <View style={styles.existingTagsSection}>
+                          <Text style={[styles.existingTagsTitle, { color: colors.warmGray }]}>
+                            Current Tags ({category.tags?.length || 0})
+                          </Text>
+                          <ScrollView 
+                            style={styles.tagsListScroll}
+                            contentContainerStyle={styles.tagsListContainer}
+                            showsVerticalScrollIndicator={true}
+                          >
+                            {category.tags && category.tags.length > 0 ? (
+                              category.tags.map((tag: string, idx: number) => (
+                                <View key={idx} style={[styles.tagItemCard, { backgroundColor: colors.cream, borderColor: colors.lightGray }]}>
+                                  <Text style={[styles.tagItemText, { color: colors.deepNavy }]}>{tag}</Text>
+                                  <TouchableOpacity
+                                    style={[styles.removeTagButton, { backgroundColor: colors.danger }]}
+                                    onPress={() => handleRemoveTag(category.id, tag)}
+                                    disabled={savingTags}
+                                  >
+                                    <Icon name="close" size={16} color={colors.white} />
+                                  </TouchableOpacity>
+                                </View>
+                              ))
+                            ) : (
+                              <View style={styles.noTagsMessage}>
+                                <Icon name="label-off" size={32} color={colors.warmGray} />
+                                <Text style={[styles.noTagsText, { color: colors.warmGray }]}>
+                                  No tags yet. Add your first tag above!
+                                </Text>
+                              </View>
+                            )}
+                          </ScrollView>
+                        </View>
+                      </View>
+                    )}
+                    
                     {isExpanded && subcategories.map((subcategory) => (
-                      <View 
-                        key={subcategory.id} 
-                        style={[
-                          styles.listItem,
-                          styles.subcategoryItem,
-                          { backgroundColor: colors.white, borderColor: colors.lightGray }
-                        ]}
-                      >
-                        <View style={styles.listIconContainer}>
-                          <Icon name={subcategory.icon} size={20} color={subcategory.color || colors.warmGray} />
+                      <View key={subcategory.id}>
+                        <View 
+                          style={[
+                            styles.listItem,
+                            styles.subcategoryItem,
+                            { backgroundColor: colors.white, borderColor: colors.lightGray }
+                          ]}
+                        >
+                          <View style={styles.listIconContainer}>
+                            <Icon name={subcategory.icon} size={20} color={subcategory.color || colors.warmGray} />
+                          </View>
+                          <View style={styles.listInfo}>
+                            <Text style={[
+                              styles.listTitle,
+                              styles.subcategoryTitle,
+                              { color: colors.deepNavy }
+                            ]}>
+                              {subcategory.name}
+                            </Text>
+                            <Text style={[styles.listSubtitle, { color: colors.warmGray }]}>
+                              {subcategory.jobCount || 0} jobs • {subcategory.fullPath}
+                            </Text>
+                            
+                            {/* Subcategory Tags */}
+                            {subcategory.tags && subcategory.tags.length > 0 && (
+                              <View style={styles.categoryTagsContainer}>
+                                <Text style={[styles.categoryTagsLabel, { color: colors.warmGray }]}>
+                                  Tags ({subcategory.tags.length}):
+                                </Text>
+                                <View style={styles.categoryTagsWrapper}>
+                                  {subcategory.tags.slice(0, 5).map((tag: string, idx: number) => (
+                                    <View key={idx} style={[styles.categoryTag, { backgroundColor: colors.cream, borderColor: colors.beeYellow }]}>
+                                      <Text style={[styles.categoryTagText, { color: colors.deepNavy }]}>{tag}</Text>
+                                    </View>
+                                  ))}
+                                  {subcategory.tags.length > 5 && (
+                                    <Text style={[styles.categoryTagMore, { color: colors.warmGray }]}>
+                                      +{subcategory.tags.length - 5} more
+                                    </Text>
+                                  )}
+                                </View>
+                              </View>
+                            )}
+                          </View>
+                          <TouchableOpacity
+                            style={[styles.editTagsButton, styles.subcategoryEditButton, { backgroundColor: colors.beeYellow }]}
+                            onPress={() => setEditingTags(editingTags === subcategory.id ? null : subcategory.id)}
+                          >
+                            <Icon name={editingTags === subcategory.id ? "close" : "edit"} size={16} color={colors.deepNavy} />
+                            <Text style={[styles.editTagsButtonText, styles.subcategoryEditButtonText, { color: colors.deepNavy }]}>
+                              {editingTags === subcategory.id ? "Close" : "Edit"}
+                            </Text>
+                          </TouchableOpacity>
                         </View>
-                        <View style={styles.listInfo}>
-                          <Text style={[
-                            styles.listTitle,
-                            styles.subcategoryTitle,
-                            { color: colors.deepNavy }
-                          ]}>
-                            {subcategory.name}
-                          </Text>
-                          <Text style={[styles.listSubtitle, { color: colors.warmGray }]}>
-                            {subcategory.jobCount || 0} jobs • {subcategory.fullPath}
-                          </Text>
-                        </View>
+                        
+                        {/* Subcategory Tag Editor */}
+                        {editingTags === subcategory.id && (
+                          <View style={[styles.tagEditorContainer, styles.subcategoryTagEditor, { backgroundColor: colors.cream, borderColor: colors.lightGray }]}>
+                            <Text style={[styles.tagEditorTitle, { color: colors.deepNavy }]}>
+                              Manage Tags for {subcategory.name}
+                            </Text>
+                            
+                            <View style={styles.addTagSection}>
+                              <View style={[styles.addTagInputWrapper, { borderColor: colors.lightGray, backgroundColor: colors.white }]}>
+                                <Icon name="add" size={20} color={colors.warmGray} />
+                                <TextInput
+                                  style={[styles.addTagInput, { color: colors.deepNavy }]}
+                                  placeholder="Enter new tag..."
+                                  placeholderTextColor={colors.warmGray}
+                                  value={newTag}
+                                  onChangeText={setNewTag}
+                                  onSubmitEditing={() => handleAddTag(subcategory.id)}
+                                />
+                              </View>
+                              <TouchableOpacity
+                                style={[styles.addTagButton, { backgroundColor: colors.beeYellow }]}
+                                onPress={() => handleAddTag(subcategory.id)}
+                                disabled={!newTag.trim() || savingTags}
+                              >
+                                {savingTags ? (
+                                  <ActivityIndicator size="small" color={colors.deepNavy} />
+                                ) : (
+                                  <>
+                                    <Icon name="add" size={18} color={colors.deepNavy} />
+                                    <Text style={[styles.addTagButtonText, { color: colors.deepNavy }]}>Add</Text>
+                                  </>
+                                )}
+                              </TouchableOpacity>
+                            </View>
+                            
+                            <View style={styles.existingTagsSection}>
+                              <Text style={[styles.existingTagsTitle, { color: colors.warmGray }]}>
+                                Current Tags ({subcategory.tags?.length || 0})
+                              </Text>
+                              <ScrollView 
+                                style={styles.tagsListScroll}
+                                contentContainerStyle={styles.tagsListContainer}
+                                showsVerticalScrollIndicator={true}
+                              >
+                                {subcategory.tags && subcategory.tags.length > 0 ? (
+                                  subcategory.tags.map((tag: string, idx: number) => (
+                                    <View key={idx} style={[styles.tagItemCard, { backgroundColor: colors.white, borderColor: colors.lightGray }]}>
+                                      <Text style={[styles.tagItemText, { color: colors.deepNavy }]}>{tag}</Text>
+                                      <TouchableOpacity
+                                        style={[styles.removeTagButton, { backgroundColor: colors.danger }]}
+                                        onPress={() => handleRemoveTag(subcategory.id, tag)}
+                                        disabled={savingTags}
+                                      >
+                                        <Icon name="close" size={16} color={colors.white} />
+                                      </TouchableOpacity>
+                                    </View>
+                                  ))
+                                ) : (
+                                  <View style={styles.noTagsMessage}>
+                                    <Icon name="label-off" size={32} color={colors.warmGray} />
+                                    <Text style={[styles.noTagsText, { color: colors.warmGray }]}>
+                                      No tags yet. Add your first tag above!
+                                    </Text>
+                                  </View>
+                                )}
+                              </ScrollView>
+                            </View>
+                          </View>
+                        )}
                       </View>
                     ))}
                   </View>
                 );
               })
           )}
-        </View>
+        </ScrollView>
       )}
     </View>
   );
@@ -15422,6 +16384,234 @@ const styles = StyleSheet.create({
     padding: 40,
     backgroundColor: lightColors.white,
   },
+  
+  // Modern Auth Screens Styles
+  authScrollContainer: {
+    flexGrow: 1,
+    paddingVertical: 40,
+  },
+  authContainer: {
+    flex: 1,
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    maxWidth: 500,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  authHeaderSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+    paddingTop: 20,
+  },
+  authLogoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 20,
+    backgroundColor: lightColors.beeYellow,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+    shadowColor: lightColors.beeYellow,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  authLogoImage: {
+    width: 48,
+    height: 48,
+    resizeMode: 'contain',
+  },
+  authTitle: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: lightColors.deepNavy,
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  authSubtitle: {
+    fontSize: 16,
+    color: lightColors.warmGray,
+    textAlign: 'center',
+  },
+  authFormCard: {
+    width: '100%',
+    backgroundColor: lightColors.white,
+    borderRadius: 20,
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  
+  // Floating Label Input Styles
+  floatingInputContainer: {
+    marginBottom: 20,
+  },
+  floatingInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: lightColors.white,
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: lightColors.lightGray,
+    minHeight: 64,
+  },
+  floatingInputFocused: {
+    borderColor: lightColors.beeYellow,
+    backgroundColor: lightColors.white,
+  },
+  floatingInputIcon: {
+    marginRight: 12,
+  },
+  floatingInputTextContainer: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  floatingLabel: {
+    fontSize: 11,
+    color: lightColors.beeYellow,
+    fontWeight: '600',
+    marginBottom: 2,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  floatingInput: {
+    fontSize: 16,
+    color: lightColors.deepNavy,
+    padding: 0,
+    margin: 0,
+    fontWeight: '500',
+  },
+  
+  // Auth Buttons
+  authPrimaryButton: {
+    backgroundColor: lightColors.deepNavy,
+    height: 56,
+    borderRadius: 14,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+    shadowColor: lightColors.deepNavy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  authButtonDisabled: {
+    opacity: 0.6,
+  },
+  authButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  authPrimaryButtonText: {
+    color: lightColors.white,
+    fontSize: 16,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  authGoogleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: lightColors.white,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: lightColors.lightGray,
+    gap: 12,
+  },
+  googleIcon: {
+    width: 20,
+    height: 20,
+  },
+  authGoogleButtonText: {
+    color: lightColors.deepNavy,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  
+  // Auth Divider
+  authDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 24,
+    gap: 12,
+  },
+  authDividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: lightColors.lightGray,
+  },
+  authDividerText: {
+    fontSize: 11,
+    color: lightColors.warmGray,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  
+  // Auth Footer Links
+  authFooterLink: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  authFooterLinkText: {
+    fontSize: 15,
+    color: lightColors.warmGray,
+  },
+  authFooterLinkHighlight: {
+    fontSize: 15,
+    color: lightColors.beeYellow,
+    fontWeight: '600',
+  },
+  authBackButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 32,
+    gap: 8,
+  },
+  authBackButtonText: {
+    fontSize: 14,
+    color: lightColors.warmGray,
+  },
+  
+  forgotPasswordLink: {
+    alignSelf: 'flex-end',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    color: lightColors.beeYellow,
+    fontWeight: '600',
+  },
+  
+  authInfoBanner: {
+    backgroundColor: lightColors.beeYellow,
+    padding: 16,
+    marginBottom: 24,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    width: '100%',
+  },
+  authInfoBannerText: {
+    flex: 1,
+    fontSize: 14,
+    color: lightColors.deepNavy,
+    fontWeight: '500',
+    lineHeight: 20,
+  },
+  
   loginHeader: {
     alignItems: 'center',
     marginBottom: 40,
@@ -18137,6 +19327,9 @@ const styles = StyleSheet.create({
   listContainer: {
     flex: 1,
   },
+  listContentContainer: {
+    paddingBottom: 20,
+  },
   listItem: {
     backgroundColor: '#FFFFFF',
     flexDirection: 'row',
@@ -18514,7 +19707,9 @@ const styles = StyleSheet.create({
   contentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: 20,
+    paddingHorizontal: 20,
   },
   listIconContainer: {
     width: 44,
@@ -18754,6 +19949,153 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: lightColors.charcoal,
   },
+  
+  // Category Tags Styles
+  categoryTagsContainer: {
+    marginTop: 8,
+  },
+  categoryTagsLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginBottom: 6,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  categoryTagsWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    alignItems: 'center',
+  },
+  categoryTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  categoryTagText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  categoryTagMore: {
+    fontSize: 11,
+    fontStyle: 'italic',
+  },
+  editTagsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    marginLeft: 8,
+  },
+  editTagsButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  subcategoryEditButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+  },
+  subcategoryEditButtonText: {
+    fontSize: 11,
+  },
+  
+  // Tag Editor Styles
+  tagEditorContainer: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  subcategoryTagEditor: {
+    marginLeft: 36,
+  },
+  tagEditorTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  addTagSection: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  addTagInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1.5,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  addTagInput: {
+    flex: 1,
+    fontSize: 14,
+    padding: 0,
+  },
+  addTagButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 10,
+  },
+  addTagButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  existingTagsSection: {
+    marginTop: 8,
+  },
+  existingTagsTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  tagsListScroll: {
+    maxHeight: 250,
+  },
+  tagsListContainer: {
+    gap: 6,
+  },
+  tagItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  tagItemText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  removeTagButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  noTagsMessage: {
+    alignItems: 'center',
+    padding: 24,
+    gap: 8,
+  },
+  noTagsText: {
+    fontSize: 13,
+    textAlign: 'center',
+  },
+  
   // Home Screen Styles
   toolbar: {
     flexDirection: 'row',
@@ -21756,6 +23098,286 @@ const styles = StyleSheet.create({
   modernBookmarkApplyText: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  // Revamped Job Modal Styles
+  jobModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 0,
+  },
+  jobModalContainer: {
+    width: '95%',
+    maxWidth: 900,
+    height: '95%',
+    borderRadius: 20,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  jobModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 24,
+    borderBottomWidth: 1,
+  },
+  jobModalHeaderContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 16,
+  },
+  jobModalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  jobModalHeaderText: {
+    flex: 1,
+  },
+  jobModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 4,
+    fontFamily: fonts.regular,
+  },
+  jobModalSubtitle: {
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    lineHeight: 18,
+  },
+  jobModalCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  jobModalScrollView: {
+    flex: 1,
+  },
+  jobModalBody: {
+    padding: 24,
+    gap: 20,
+  },
+  jobFormSection: {
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  jobFormSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 20,
+    paddingBottom: 12,
+    borderBottomWidth: 2,
+    borderBottomColor: '#f0f0f0',
+  },
+  jobFormSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: fonts.regular,
+  },
+  jobFormField: {
+    marginBottom: 20,
+  },
+  jobFormRow: {
+    flexDirection: 'row',
+    gap: 0,
+  },
+  jobFormLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 8,
+    fontFamily: fonts.regular,
+  },
+  jobFormHint: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontFamily: fonts.regular,
+    lineHeight: 16,
+  },
+  jobInputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  jobFormInput: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    padding: 0,
+    margin: 0,
+  },
+  jobSelectWrapper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    overflow: 'hidden',
+  },
+  jobFormTextArea: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    fontFamily: fonts.regular,
+    minHeight: 120,
+  },
+  jobFormToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 20,
+  },
+  jobFormToggleLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  jobFormToggleLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: fonts.regular,
+  },
+  jobFormToggleHint: {
+    fontSize: 12,
+    marginTop: 2,
+    fontFamily: fonts.regular,
+  },
+  tagsScrollContainer: {
+    maxHeight: 300,
+    borderWidth: 1.5,
+    borderRadius: 12,
+    borderColor: lightColors.lightGray,
+    marginTop: 8,
+  },
+  tagsSelectionContainer: {
+    padding: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tagSelectionButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  tagSelectionText: {
+    fontSize: 13,
+    fontWeight: '500',
+    fontFamily: fonts.regular,
+  },
+  emptyTagsMessage: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 20,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  emptyTagsText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: fonts.regular,
+    lineHeight: 20,
+  },
+  selectedTagsContainer: {
+    marginTop: 16,
+    padding: 12,
+    backgroundColor: lightColors.cream,
+    borderRadius: 12,
+  },
+  selectedTagsLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 8,
+    fontFamily: fonts.regular,
+  },
+  selectedTagsWrapper: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  selectedTag: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  selectedTagText: {
+    fontSize: 12,
+    fontWeight: '600',
+    fontFamily: fonts.regular,
+  },
+  jobModalFooter: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    padding: 24,
+    borderTopWidth: 1,
+  },
+  jobModalSecondaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    minWidth: 120,
+    justifyContent: 'center',
+  },
+  jobModalSecondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    fontFamily: fonts.regular,
+  },
+  jobModalPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 32,
+    paddingVertical: 14,
+    borderRadius: 12,
+    minWidth: 140,
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  jobModalPrimaryButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    fontFamily: fonts.regular,
   },
 });
 
